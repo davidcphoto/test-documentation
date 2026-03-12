@@ -116,16 +116,37 @@
           "group": "inline"
         },
         {
+          "command": "test-documentation.viewProjectReport",
+          "when": "view == testProjectsView && viewItem == project",
+          "group": "inline"
+        },
+        {
           "command": "test-documentation.deleteProject",
           "when": "view == testProjectsView && viewItem == project",
           "group": "inline"
         },
         {
+          "command": "test-documentation.addRequirement",
+          "when": "view == testProjectsView && viewItem == project",
+          "group": "1_actions"
+        },
+        {
           "command": "test-documentation.viewProjectReport",
-          "when": "view == testProjectsView && viewItem == project"
+          "when": "view == testProjectsView && viewItem == project",
+          "group": "2_reports"
+        },
+        {
+          "command": "test-documentation.deleteProject",
+          "when": "view == testProjectsView && viewItem == project",
+          "group": "9_delete"
         },
         {
           "command": "test-documentation.addTestCase",
+          "when": "view == testProjectsView && viewItem == requirement",
+          "group": "inline"
+        },
+        {
+          "command": "test-documentation.viewRequirementReport",
           "when": "view == testProjectsView && viewItem == requirement",
           "group": "inline"
         },
@@ -135,8 +156,19 @@
           "group": "inline"
         },
         {
+          "command": "test-documentation.addTestCase",
+          "when": "view == testProjectsView && viewItem == requirement",
+          "group": "1_actions"
+        },
+        {
           "command": "test-documentation.viewRequirementReport",
-          "when": "view == testProjectsView && viewItem == requirement"
+          "when": "view == testProjectsView && viewItem == requirement",
+          "group": "2_reports"
+        },
+        {
+          "command": "test-documentation.deleteRequirement",
+          "when": "view == testProjectsView && viewItem == requirement",
+          "group": "9_delete"
         },
         {
           "command": "test-documentation.executeTest",
@@ -145,15 +177,38 @@
         },
         {
           "command": "test-documentation.addEvidence",
-          "when": "view == testProjectsView && viewItem == testCase"
+          "when": "view == testProjectsView && viewItem == testCase",
+          "group": "inline"
         },
         {
           "command": "test-documentation.viewTestDetails",
-          "when": "view == testProjectsView && viewItem == testCase"
+          "when": "view == testProjectsView && viewItem == testCase",
+          "group": "inline"
         },
         {
           "command": "test-documentation.deleteTestCase",
-          "when": "view == testProjectsView && viewItem == testCase"
+          "when": "view == testProjectsView && viewItem == testCase",
+          "group": "inline"
+        },
+        {
+          "command": "test-documentation.executeTest",
+          "when": "view == testProjectsView && viewItem == testCase",
+          "group": "1_actions"
+        },
+        {
+          "command": "test-documentation.addEvidence",
+          "when": "view == testProjectsView && viewItem == testCase",
+          "group": "1_actions"
+        },
+        {
+          "command": "test-documentation.viewTestDetails",
+          "when": "view == testProjectsView && viewItem == testCase",
+          "group": "2_reports"
+        },
+        {
+          "command": "test-documentation.deleteTestCase",
+          "when": "view == testProjectsView && viewItem == testCase",
+          "group": "9_delete"
         }
       ]
     }
@@ -175,6 +230,6 @@
   },
   "dependencies": {
     "screenshot-desktop": "^1.12.7",
-    "sharp": "^0.32.0"
+    "sharp": "^0.34.5"
   }
 }
