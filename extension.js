@@ -817,36 +817,44 @@ function activate(context) {
 				});
 
 				if (name) {
-					const expectedResult = await vscode.window.showInputBox({
-						prompt: 'Enter expected result',
-						placeHolder: 'User should be logged in successfully'
+					const description = await vscode.window.showInputBox({
+						prompt: 'Enter test description',
+						placeHolder: 'Verify that user can login with valid credentials'
 					});
 
-					if (expectedResult) {
-						const testCase = {
-							id: Date.now().toString(),
-							name: name,
-							expectedResult: expectedResult,
-							executed: false,
-							passed: false,
-							executedBy: '',
-							executionDate: '',
-							observations: '',
-							evidences: [],
-							createdDate: new Date().toISOString()
-						};
+					if (description) {
+						const expectedResult = await vscode.window.showInputBox({
+							prompt: 'Enter expected result',
+							placeHolder: 'User should be logged in successfully'
+						});
 
-						const project = dataManager.getProject(item.projectId);
-						const requirement = project.requirements.find(r => r.id === item.requirement.id);
-						
-						if (!requirement.testCases) {
-							requirement.testCases = [];
+						if (expectedResult) {
+							const testCase = {
+								id: Date.now().toString(),
+								name: name,
+								description: description,
+								expectedResult: expectedResult,
+								executed: false,
+								passed: false,
+								executedBy: '',
+								executionDate: '',
+								observations: '',
+								evidences: [],
+								createdDate: new Date().toISOString()
+							};
+
+							const project = dataManager.getProject(item.projectId);
+							const requirement = project.requirements.find(r => r.id === item.requirement.id);
+							
+							if (!requirement.testCases) {
+								requirement.testCases = [];
+							}
+							requirement.testCases.push(testCase);
+
+							await dataManager.updateProject(project.id, project);
+							treeProvider.refresh();
+							vscode.window.showInformationMessage(`Test case "${name}" added!`);
 						}
-						requirement.testCases.push(testCase);
-
-						await dataManager.updateProject(project.id, project);
-						treeProvider.refresh();
-						vscode.window.showInformationMessage(`Test case "${name}" added!`);
 					}
 				}
 			}
@@ -879,9 +887,13 @@ function activate(context) {
 	context.subscriptions.push(
 		vscode.commands.registerCommand('test-documentation.executeTest', async (item) => {
 			if (item && item instanceof TestCaseTreeItem) {
+				// Retrieve last executor from global state
+				const lastExecutor = context.globalState.get('lastExecutor', '');
+				
 				const executedBy = await vscode.window.showInputBox({
 					prompt: 'Enter your name',
-					placeHolder: 'John Doe'
+					placeHolder: 'John Doe',
+					value: lastExecutor
 				});
 
 				if (executedBy) {
@@ -906,6 +918,10 @@ function activate(context) {
 						testCase.observations = observations || '';
 
 						await dataManager.updateProject(project.id, project);
+						
+						// Save executor name for future use
+						await context.globalState.update('lastExecutor', executedBy);
+						
 						treeProvider.refresh();
 						vscode.window.showInformationMessage(`Test execution recorded!`);
 					}
@@ -1361,7 +1377,7 @@ function getWebviewContent(testCase, webview) {
 					console.log('Webview URI created:', imageUri.toString());
 					imageHtml = `
 						<div class="image-container">
-							<img src="${imageUri}" alt="${evidence.fileName}" class="evidence-image" onclick="this.classList.toggle('enlarged')" onerror="console.error('Failed to load image: ${evidence.fileName}')">
+							<img src="${imageUri}" alt="${evidence.fileName}" class="evidence-image" onclick="toggleImageZoom(this)" onerror="console.error('Failed to load image: ${evidence.fileName}')">
 							<p class="image-hint">Click image to enlarge</p>
 						</div>
 					`;
@@ -1525,6 +1541,20 @@ function getWebviewContent(testCase, webview) {
 				color: var(--vscode-errorForeground);
 				font-style: italic;
 			}
+			.image-overlay {
+				display: none;
+				position: fixed;
+				top: 0;
+				left: 0;
+				width: 100%;
+				height: 100%;
+				background-color: rgba(0, 0, 0, 0.85);
+				z-index: 999;
+				cursor: pointer;
+			}
+			.image-overlay.active {
+				display: block;
+			}
 		</style>
 	</head>
 	<body>
@@ -1534,6 +1564,12 @@ function getWebviewContent(testCase, webview) {
 			<div class="info-row">
 				<span class="label">Status:</span> ${statusBadge}
 			</div>
+			${testCase.description ? `
+			<div class="info-row">
+				<span class="label">Description:</span>
+				<p>${testCase.description}</p>
+			</div>
+			` : ''}
 			<div class="info-row">
 				<span class="label">Expected Result:</span>
 				<p>${testCase.expectedResult}</p>
@@ -1556,6 +1592,8 @@ function getWebviewContent(testCase, webview) {
 
 		${evidencesHtml}
 		
+		<div class="image-overlay" id="imageOverlay" onclick="closeImageZoom()"></div>
+		
 		<script>
 			const vscode = acquireVsCodeApi();
 			
@@ -1564,6 +1602,23 @@ function getWebviewContent(testCase, webview) {
 					command: 'removeEvidence',
 					evidenceId: evidenceId
 				});
+			}
+			
+			function toggleImageZoom(img) {
+				const overlay = document.getElementById('imageOverlay');
+				if (img.classList.contains('enlarged')) {
+					img.classList.remove('enlarged');
+					overlay.classList.remove('active');
+				} else {
+					img.classList.add('enlarged');
+					overlay.classList.add('active');
+				}
+			}
+			
+			function closeImageZoom() {
+				const images = document.querySelectorAll('.evidence-image.enlarged');
+				images.forEach(img => img.classList.remove('enlarged'));
+				document.getElementById('imageOverlay').classList.remove('active');
 			}
 		</script>
 	</body>
@@ -1593,6 +1648,8 @@ function getRequirementReportContent(requirement, project, webview) {
 				${testCase.observations ? `<p><strong>Observations:</strong> ${testCase.observations}</p>` : ''}
 			` : '';
 
+			const descriptionInfo = testCase.description ? `<p><strong>Description:</strong> ${testCase.description}</p>` : '';
+
 			// Build evidence HTML with images
 			let evidenceHtml = '';
 			if (testCase.evidences && testCase.evidences.length > 0) {
@@ -1604,7 +1661,7 @@ function getRequirementReportContent(requirement, project, webview) {
 							const imageUri = webview.asWebviewUri(vscode.Uri.file(evidence.filePath));
 							imageHtml = `
 								<div class="evidence-image-container">
-									<img src="${imageUri}" alt="${evidence.fileName}" class="evidence-thumbnail" onclick="this.classList.toggle('enlarged')">
+									<img src="${imageUri}" alt="${evidence.fileName}" class="evidence-thumbnail" onclick="toggleImageZoom(this)">
 									<p class="image-caption">${evidence.fileName}</p>
 								</div>
 							`;
@@ -1630,6 +1687,7 @@ function getRequirementReportContent(requirement, project, webview) {
 				<div class="test-case-item">
 					<h3>${index + 1}. ${testCase.name}</h3>
 					<div class="status-line">${statusBadge}</div>
+					${descriptionInfo}
 					<p><strong>Expected Result:</strong> ${testCase.expectedResult}</p>
 					${executionInfo}
 					${evidenceHtml}
@@ -1811,6 +1869,20 @@ function getRequirementReportContent(requirement, project, webview) {
 				font-style: italic;
 				font-size: 0.9em;
 			}
+			.image-overlay {
+				display: none;
+				position: fixed;
+				top: 0;
+				left: 0;
+				width: 100%;
+				height: 100%;
+				background-color: rgba(0, 0, 0, 0.85);
+				z-index: 999;
+				cursor: pointer;
+			}
+			.image-overlay.active {
+				display: block;
+			}
 		</style>
 	</head>
 	<body>
@@ -1846,6 +1918,27 @@ function getRequirementReportContent(requirement, project, webview) {
 
 		<h2>🧪 Test Cases</h2>
 		${testsHtml}
+		
+		<div class="image-overlay" id="imageOverlay" onclick="closeImageZoom()"></div>
+		
+		<script>
+			function toggleImageZoom(img) {
+				const overlay = document.getElementById('imageOverlay');
+				if (img.classList.contains('enlarged')) {
+					img.classList.remove('enlarged');
+					overlay.classList.remove('active');
+				} else {
+					img.classList.add('enlarged');
+					overlay.classList.add('active');
+				}
+			}
+			
+			function closeImageZoom() {
+				const images = document.querySelectorAll('.evidence-thumbnail.enlarged, .evidence-thumb.enlarged');
+				images.forEach(img => img.classList.remove('enlarged'));
+				document.getElementById('imageOverlay').classList.remove('active');
+			}
+		</script>
 	</body>
 	</html>`;
 }
@@ -1897,6 +1990,8 @@ function getProjectReportContent(project, webview) {
 							: '<span class="badge badge-failed">✗ Failed</span>')
 						: '<span class="badge badge-pending">○ Not Executed</span>';
 
+					const descriptionInfo = testCase.description ? `<p><strong>Description:</strong> ${testCase.description}</p>` : '';
+
 					// Build evidence HTML with images
 					let evidenceHtml = '';
 					if (testCase.evidences && testCase.evidences.length > 0) {
@@ -1908,7 +2003,7 @@ function getProjectReportContent(project, webview) {
 									const imageUri = webview.asWebviewUri(vscode.Uri.file(evidence.filePath));
 									imageHtml = `
 										<div class="evidence-thumb-container">
-											<img src="${imageUri}" alt="${evidence.fileName}" class="evidence-thumb" onclick="this.classList.toggle('enlarged')" title="Click to enlarge">
+											<img src="${imageUri}" alt="${evidence.fileName}" class="evidence-thumb" onclick="toggleImageZoom(this)" title="Click to enlarge">
 											<span class="evidence-thumb-caption">${evidenceIndex + 1}. ${evidence.fileName}</span>
 										</div>
 									`;
@@ -1929,6 +2024,7 @@ function getProjectReportContent(project, webview) {
 								${statusBadge}
 							</div>
 							<div class="test-details">
+								${descriptionInfo}
 								<p><strong>Expected Result:</strong> ${testCase.expectedResult}</p>
 								${testCase.executed ? `<p><strong>Executed By:</strong> ${testCase.executedBy} on ${testCase.executionDate}</p>` : ''}
 								${evidenceHtml}
@@ -2165,6 +2261,20 @@ function getProjectReportContent(project, webview) {
 				font-size: 0.8em;
 				color: var(--vscode-errorForeground);
 			}
+			.image-overlay {
+				display: none;
+				position: fixed;
+				top: 0;
+				left: 0;
+				width: 100%;
+				height: 100%;
+				background-color: rgba(0, 0, 0, 0.85);
+				z-index: 999;
+				cursor: pointer;
+			}
+			.image-overlay.active {
+				display: block;
+			}
 		</style>
 	</head>
 	<body>
@@ -2201,6 +2311,27 @@ function getProjectReportContent(project, webview) {
 
 		<h2>📋 Requirements & Test Cases</h2>
 		${requirementsHtml}
+		
+		<div class="image-overlay" id="imageOverlay" onclick="closeImageZoom()"></div>
+		
+		<script>
+			function toggleImageZoom(img) {
+				const overlay = document.getElementById('imageOverlay');
+				if (img.classList.contains('enlarged')) {
+					img.classList.remove('enlarged');
+					overlay.classList.remove('active');
+				} else {
+					img.classList.add('enlarged');
+					overlay.classList.add('active');
+				}
+			}
+			
+			function closeImageZoom() {
+				const images = document.querySelectorAll('.evidence-thumbnail.enlarged, .evidence-thumb.enlarged');
+				images.forEach(img => img.classList.remove('enlarged'));
+				document.getElementById('imageOverlay').classList.remove('active');
+			}
+		</script>
 	</body>
 	</html>`;
 }
