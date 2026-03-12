@@ -1239,6 +1239,106 @@ function activate(context) {
 		})
 	);
 
+	// Command: View Requirement Report
+	context.subscriptions.push(
+		vscode.commands.registerCommand('test-documentation.viewRequirementReport', async (item) => {
+			if (item && item instanceof RequirementTreeItem) {
+				const requirement = item.requirement;
+				const projectId = item.projectId;
+
+				// Get the project
+				const projects = dataManager.getProjects();
+				const project = projects.find(p => p.id === projectId);
+				if (!project) {
+					vscode.window.showErrorMessage('Project not found.');
+					return;
+				}
+
+				// Collect all unique directories from evidence file paths
+				const resourceRoots = [];
+				const testCases = requirement.testCases || [];
+				const uniqueDirs = new Set();
+				testCases.forEach(testCase => {
+					if (testCase.evidences) {
+						testCase.evidences.forEach(evidence => {
+							if (evidence.filePath) {
+								uniqueDirs.add(path.dirname(evidence.filePath));
+							}
+						});
+					}
+				});
+				uniqueDirs.forEach(dir => {
+					resourceRoots.push(vscode.Uri.file(dir));
+				});
+
+				// Always add workspace folder if available
+				const workspaceFolders = vscode.workspace.workspaceFolders;
+				if (workspaceFolders && workspaceFolders.length > 0) {
+					resourceRoots.push(workspaceFolders[0].uri);
+				}
+
+				const panel = vscode.window.createWebviewPanel(
+					'requirementReport',
+					`Requirement Report: ${requirement.name}`,
+					vscode.ViewColumn.One,
+					{ 
+						enableScripts: true,
+						localResourceRoots: resourceRoots.length > 0 ? resourceRoots : undefined
+					}
+				);
+
+				panel.webview.html = getRequirementReportContent(requirement, project, panel.webview);
+			}
+		})
+	);
+
+	// Command: View Project Report
+	context.subscriptions.push(
+		vscode.commands.registerCommand('test-documentation.viewProjectReport', async (item) => {
+			if (item && item instanceof ProjectTreeItem) {
+				const project = item.project;
+
+				// Collect all unique directories from evidence file paths
+				const resourceRoots = [];
+				const uniqueDirs = new Set();
+				const requirements = project.requirements || [];
+				requirements.forEach(requirement => {
+					const testCases = requirement.testCases || [];
+					testCases.forEach(testCase => {
+						if (testCase.evidences) {
+							testCase.evidences.forEach(evidence => {
+								if (evidence.filePath) {
+									uniqueDirs.add(path.dirname(evidence.filePath));
+								}
+							});
+						}
+					});
+				});
+				uniqueDirs.forEach(dir => {
+					resourceRoots.push(vscode.Uri.file(dir));
+				});
+
+				// Always add workspace folder if available
+				const workspaceFolders = vscode.workspace.workspaceFolders;
+				if (workspaceFolders && workspaceFolders.length > 0) {
+					resourceRoots.push(workspaceFolders[0].uri);
+				}
+
+				const panel = vscode.window.createWebviewPanel(
+					'projectReport',
+					`Project Report: ${project.name}`,
+					vscode.ViewColumn.One,
+					{ 
+						enableScripts: true,
+						localResourceRoots: resourceRoots.length > 0 ? resourceRoots : undefined
+					}
+				);
+
+				panel.webview.html = getProjectReportContent(project, panel.webview);
+			}
+		})
+	);
+
 	context.subscriptions.push(treeView);
 }
 
@@ -1466,6 +1566,641 @@ function getWebviewContent(testCase, webview) {
 				});
 			}
 		</script>
+	</body>
+	</html>`;
+}
+
+function getRequirementReportContent(requirement, project, webview) {
+	const testCasesList = requirement.testCases || [];
+	const totalTests = testCasesList.length;
+	const executedTests = testCasesList.filter(tc => tc.executed).length;
+	const passedTests = testCasesList.filter(tc => tc.executed && tc.passed).length;
+	const failedTests = testCasesList.filter(tc => tc.executed && !tc.passed).length;
+	const notExecutedTests = totalTests - executedTests;
+
+	let testsHtml = '';
+	if (testCasesList.length > 0) {
+		testCasesList.forEach((testCase, index) => {
+			const statusBadge = testCase.executed 
+				? (testCase.passed 
+					? '<span class="badge badge-success">✓ Passed</span>' 
+					: '<span class="badge badge-failed">✗ Failed</span>')
+				: '<span class="badge badge-pending">○ Not Executed</span>';
+
+			const executionInfo = testCase.executed ? `
+				<p><strong>Executed By:</strong> ${testCase.executedBy}</p>
+				<p><strong>Execution Date:</strong> ${testCase.executionDate}</p>
+				${testCase.observations ? `<p><strong>Observations:</strong> ${testCase.observations}</p>` : ''}
+			` : '';
+
+			// Build evidence HTML with images
+			let evidenceHtml = '';
+			if (testCase.evidences && testCase.evidences.length > 0) {
+				evidenceHtml = '<div class="evidences-section"><h4>📎 Evidences</h4>';
+				testCase.evidences.forEach((evidence, evidenceIndex) => {
+					let imageHtml = '';
+					if (evidence.filePath && fs.existsSync(evidence.filePath)) {
+						try {
+							const imageUri = webview.asWebviewUri(vscode.Uri.file(evidence.filePath));
+							imageHtml = `
+								<div class="evidence-image-container">
+									<img src="${imageUri}" alt="${evidence.fileName}" class="evidence-thumbnail" onclick="this.classList.toggle('enlarged')">
+									<p class="image-caption">${evidence.fileName}</p>
+								</div>
+							`;
+						} catch (error) {
+							imageHtml = `<p class="error-text">Failed to load image</p>`;
+						}
+					}
+
+					const croppedBadge = evidence.cropped ? '<span class="cropped-badge">✂️ Cropped</span>' : '';
+
+					evidenceHtml += `
+						<div class="evidence-item-small">
+							<strong>${evidenceIndex + 1}. ${evidence.fileName}</strong> ${croppedBadge}
+							${evidence.description ? `<p class="evidence-desc">${evidence.description}</p>` : ''}
+							${imageHtml}
+						</div>
+					`;
+				});
+				evidenceHtml += '</div>';
+			}
+
+			testsHtml += `
+				<div class="test-case-item">
+					<h3>${index + 1}. ${testCase.name}</h3>
+					<div class="status-line">${statusBadge}</div>
+					<p><strong>Expected Result:</strong> ${testCase.expectedResult}</p>
+					${executionInfo}
+					${evidenceHtml}
+				</div>
+			`;
+		});
+	} else {
+		testsHtml = '<p class="empty-state">No test cases defined for this requirement.</p>';
+	}
+
+	return `<!DOCTYPE html>
+	<html lang="en">
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<title>Requirement Report</title>
+		<style>
+			body {
+				font-family: var(--vscode-font-family);
+				padding: 20px;
+				color: var(--vscode-foreground);
+				background-color: var(--vscode-editor-background);
+			}
+			h1 {
+				color: var(--vscode-editor-foreground);
+				border-bottom: 3px solid var(--vscode-panel-border);
+				padding-bottom: 15px;
+				margin-bottom: 20px;
+			}
+			h2 {
+				color: var(--vscode-editor-foreground);
+				margin-top: 30px;
+				margin-bottom: 15px;
+			}
+			.report-header {
+				background: linear-gradient(135deg, var(--vscode-editor-inactiveSelectionBackground) 0%, var(--vscode-editor-selectionBackground) 100%);
+				padding: 20px;
+				border-radius: 8px;
+				margin-bottom: 30px;
+			}
+			.project-info {
+				font-size: 0.95em;
+				color: var(--vscode-descriptionForeground);
+				margin-bottom: 10px;
+			}
+			.stats-grid {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+				gap: 15px;
+				margin: 20px 0;
+			}
+			.stat-card {
+				background-color: var(--vscode-editor-inactiveSelectionBackground);
+				padding: 15px;
+				border-radius: 6px;
+				text-align: center;
+				border-left: 4px solid var(--vscode-textLink-foreground);
+			}
+			.stat-number {
+				font-size: 2em;
+				font-weight: bold;
+				color: var(--vscode-textLink-foreground);
+				display: block;
+			}
+			.stat-label {
+				font-size: 0.9em;
+				color: var(--vscode-descriptionForeground);
+				margin-top: 5px;
+			}
+			.test-case-item {
+				background-color: var(--vscode-editor-inactiveSelectionBackground);
+				padding: 20px;
+				margin: 15px 0;
+				border-radius: 6px;
+				border-left: 4px solid var(--vscode-panel-border);
+			}
+			.test-case-item h3 {
+				margin-top: 0;
+				color: var(--vscode-textLink-foreground);
+			}
+			.status-line {
+				margin: 10px 0;
+			}
+			.badge {
+				display: inline-block;
+				padding: 5px 15px;
+				border-radius: 12px;
+				font-weight: bold;
+				font-size: 0.9em;
+			}
+			.badge-success {
+				background-color: #28a745;
+				color: white;
+			}
+			.badge-failed {
+				background-color: #dc3545;
+				color: white;
+			}
+			.badge-pending {
+				background-color: #6c757d;
+				color: white;
+			}
+			.empty-state {
+				text-align: center;
+				padding: 40px;
+				color: var(--vscode-descriptionForeground);
+				font-style: italic;
+			}
+			p {
+				margin: 8px 0;
+			}
+			.evidences-section {
+				margin-top: 15px;
+				padding-top: 15px;
+				border-top: 1px solid var(--vscode-panel-border);
+			}
+			.evidences-section h4 {
+				margin: 0 0 10px 0;
+				color: var(--vscode-textLink-foreground);
+				font-size: 1em;
+			}
+			.evidence-item-small {
+				margin: 10px 0;
+				padding: 10px;
+				background-color: var(--vscode-editor-background);
+				border-radius: 4px;
+			}
+			.evidence-desc {
+				font-size: 0.9em;
+				color: var(--vscode-descriptionForeground);
+				margin: 5px 0;
+			}
+			.evidence-image-container {
+				margin: 10px 0;
+				text-align: center;
+			}
+			.evidence-thumbnail {
+				max-width: 100%;
+				max-height: 300px;
+				height: auto;
+				border: 1px solid var(--vscode-panel-border);
+				border-radius: 4px;
+				cursor: pointer;
+				transition: all 0.3s ease;
+				box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+			}
+			.evidence-thumbnail:hover {
+				box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+				transform: scale(1.02);
+			}
+			.evidence-thumbnail.enlarged {
+				max-width: none;
+				max-height: 90vh;
+				width: auto;
+				position: fixed;
+				top: 50%;
+				left: 50%;
+				transform: translate(-50%, -50%);
+				z-index: 1000;
+				box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+			}
+			.image-caption {
+				font-size: 0.85em;
+				color: var(--vscode-descriptionForeground);
+				margin: 5px 0;
+				font-style: italic;
+			}
+			.cropped-badge {
+				display: inline-block;
+				padding: 2px 6px;
+				background-color: #ffc107;
+				color: #000;
+				border-radius: 3px;
+				font-size: 0.8em;
+				margin-left: 5px;
+			}
+			.error-text {
+				color: var(--vscode-errorForeground);
+				font-style: italic;
+				font-size: 0.9em;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="report-header">
+			<h1>📋 Requirement Report</h1>
+			<div class="project-info">
+				<strong>Project:</strong> ${project.name}
+			</div>
+			<div class="project-info">
+				<strong>Requirement:</strong> ${requirement.name}
+			</div>
+		</div>
+
+		<h2>📊 Summary Statistics</h2>
+		<div class="stats-grid">
+			<div class="stat-card">
+				<span class="stat-number">${totalTests}</span>
+				<div class="stat-label">Total Tests</div>
+			</div>
+			<div class="stat-card" style="border-left-color: #28a745;">
+				<span class="stat-number" style="color: #28a745;">${passedTests}</span>
+				<div class="stat-label">Passed</div>
+			</div>
+			<div class="stat-card" style="border-left-color: #dc3545;">
+				<span class="stat-number" style="color: #dc3545;">${failedTests}</span>
+				<div class="stat-label">Failed</div>
+			</div>
+			<div class="stat-card" style="border-left-color: #6c757d;">
+				<span class="stat-number" style="color: #6c757d;">${notExecutedTests}</span>
+				<div class="stat-label">Not Executed</div>
+			</div>
+		</div>
+
+		<h2>🧪 Test Cases</h2>
+		${testsHtml}
+	</body>
+	</html>`;
+}
+
+function getProjectReportContent(project, webview) {
+	const requirementsList = project.requirements || [];
+	const totalRequirements = requirementsList.length;
+	
+	let totalTests = 0;
+	let passedTests = 0;
+	let failedTests = 0;
+	let notExecutedTests = 0;
+
+	requirementsList.forEach(req => {
+		const tests = req.testCases || [];
+		totalTests += tests.length;
+		passedTests += tests.filter(tc => tc.executed && tc.passed).length;
+		failedTests += tests.filter(tc => tc.executed && !tc.passed).length;
+		notExecutedTests += tests.filter(tc => !tc.executed).length;
+	});
+
+	let requirementsHtml = '';
+	if (requirementsList.length > 0) {
+		requirementsList.forEach((requirement, reqIndex) => {
+			const testCases = requirement.testCases || [];
+			const reqTotalTests = testCases.length;
+			const reqPassedTests = testCases.filter(tc => tc.executed && tc.passed).length;
+			const reqFailedTests = testCases.filter(tc => tc.executed && !tc.passed).length;
+			const reqNotExecuted = testCases.filter(tc => !tc.executed).length;
+
+			// Calculate requirement status
+			let reqStatusBadge = '<span class="badge badge-pending">○ Not Executed</span>';
+			if (reqTotalTests > 0) {
+				if (reqPassedTests === reqTotalTests) {
+					reqStatusBadge = '<span class="badge badge-success">✓ All Passed</span>';
+				} else if (reqFailedTests > 0) {
+					reqStatusBadge = '<span class="badge badge-failed">✗ Has Failures</span>';
+				} else if (reqPassedTests > 0) {
+					reqStatusBadge = '<span class="badge badge-partial">◐ Partial</span>';
+				}
+			}
+
+			let testsHtml = '';
+			if (testCases.length > 0) {
+				testCases.forEach((testCase, testIndex) => {
+					const statusBadge = testCase.executed 
+						? (testCase.passed 
+							? '<span class="badge badge-success">✓ Passed</span>' 
+							: '<span class="badge badge-failed">✗ Failed</span>')
+						: '<span class="badge badge-pending">○ Not Executed</span>';
+
+					// Build evidence HTML with images
+					let evidenceHtml = '';
+					if (testCase.evidences && testCase.evidences.length > 0) {
+						evidenceHtml = '<div class="evidences-section-mini">';
+						testCase.evidences.forEach((evidence, evidenceIndex) => {
+							let imageHtml = '';
+							if (evidence.filePath && fs.existsSync(evidence.filePath)) {
+								try {
+									const imageUri = webview.asWebviewUri(vscode.Uri.file(evidence.filePath));
+									imageHtml = `
+										<div class="evidence-thumb-container">
+											<img src="${imageUri}" alt="${evidence.fileName}" class="evidence-thumb" onclick="this.classList.toggle('enlarged')" title="Click to enlarge">
+											<span class="evidence-thumb-caption">${evidenceIndex + 1}. ${evidence.fileName}</span>
+										</div>
+									`;
+								} catch (error) {
+									imageHtml = `<span class="error-mini">Error loading image</span>`;
+								}
+							}
+
+							evidenceHtml += imageHtml;
+						});
+						evidenceHtml += '</div>';
+					}
+
+					testsHtml += `
+						<div class="test-item">
+							<div class="test-header">
+								<span class="test-name">${testIndex + 1}. ${testCase.name}</span>
+								${statusBadge}
+							</div>
+							<div class="test-details">
+								<p><strong>Expected Result:</strong> ${testCase.expectedResult}</p>
+								${testCase.executed ? `<p><strong>Executed By:</strong> ${testCase.executedBy} on ${testCase.executionDate}</p>` : ''}
+								${evidenceHtml}
+							</div>
+						</div>
+					`;
+				});
+			} else {
+				testsHtml = '<p class="no-tests">No test cases defined.</p>';
+			}
+
+			requirementsHtml += `
+				<div class="requirement-section">
+					<div class="requirement-header">
+						<h3>${reqIndex + 1}. ${requirement.name}</h3>
+						${reqStatusBadge}
+					</div>
+					<div class="requirement-stats">
+						<span class="stat-item">Total: ${reqTotalTests}</span>
+						<span class="stat-item stat-success">Passed: ${reqPassedTests}</span>
+						<span class="stat-item stat-failed">Failed: ${reqFailedTests}</span>
+						<span class="stat-item stat-pending">Not Executed: ${reqNotExecuted}</span>
+					</div>
+					<div class="tests-list">
+						${testsHtml}
+					</div>
+				</div>
+			`;
+		});
+	} else {
+		requirementsHtml = '<p class="empty-state">No requirements defined for this project.</p>';
+	}
+
+	return `<!DOCTYPE html>
+	<html lang="en">
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<title>Project Report</title>
+		<style>
+			body {
+				font-family: var(--vscode-font-family);
+				padding: 20px;
+				color: var(--vscode-foreground);
+				background-color: var(--vscode-editor-background);
+			}
+			h1 {
+				color: var(--vscode-editor-foreground);
+				border-bottom: 3px solid var(--vscode-panel-border);
+				padding-bottom: 15px;
+				margin-bottom: 20px;
+			}
+			h2 {
+				color: var(--vscode-editor-foreground);
+				margin-top: 30px;
+				margin-bottom: 20px;
+			}
+			h3 {
+				margin: 0;
+				color: var(--vscode-textLink-foreground);
+			}
+			.report-header {
+				background: linear-gradient(135deg, var(--vscode-editor-inactiveSelectionBackground) 0%, var(--vscode-editor-selectionBackground) 100%);
+				padding: 25px;
+				border-radius: 8px;
+				margin-bottom: 30px;
+			}
+			.stats-grid {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+				gap: 15px;
+				margin: 20px 0;
+			}
+			.stat-card {
+				background-color: var(--vscode-editor-inactiveSelectionBackground);
+				padding: 20px;
+				border-radius: 6px;
+				text-align: center;
+				border-left: 4px solid var(--vscode-textLink-foreground);
+			}
+			.stat-number {
+				font-size: 2.5em;
+				font-weight: bold;
+				color: var(--vscode-textLink-foreground);
+				display: block;
+			}
+			.stat-label {
+				font-size: 0.9em;
+				color: var(--vscode-descriptionForeground);
+				margin-top: 8px;
+			}
+			.requirement-section {
+				background-color: var(--vscode-editor-inactiveSelectionBackground);
+				padding: 20px;
+				margin: 20px 0;
+				border-radius: 8px;
+				border-left: 4px solid var(--vscode-textLink-foreground);
+			}
+			.requirement-header {
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+				margin-bottom: 15px;
+				padding-bottom: 10px;
+				border-bottom: 1px solid var(--vscode-panel-border);
+			}
+			.requirement-stats {
+				display: flex;
+				gap: 20px;
+				margin-bottom: 15px;
+				font-size: 0.9em;
+			}
+			.stat-item {
+				padding: 5px 10px;
+				background-color: var(--vscode-editor-background);
+				border-radius: 4px;
+			}
+			.stat-success {
+				color: #28a745;
+			}
+			.stat-failed {
+				color: #dc3545;
+			}
+			.stat-pending {
+				color: #6c757d;
+			}
+			.tests-list {
+				margin-top: 15px;
+			}
+			.test-item {
+				background-color: var(--vscode-editor-background);
+				padding: 15px;
+				margin: 10px 0;
+				border-radius: 4px;
+				border-left: 3px solid var(--vscode-panel-border);
+			}
+			.test-header {
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+				margin-bottom: 10px;
+			}
+			.test-name {
+				font-weight: 600;
+				color: var(--vscode-editor-foreground);
+			}
+			.test-details {
+				font-size: 0.9em;
+			}
+			.test-details p {
+				margin: 5px 0;
+			}
+			.badge {
+				display: inline-block;
+				padding: 4px 12px;
+				border-radius: 10px;
+				font-weight: bold;
+				font-size: 0.85em;
+			}
+			.badge-success {
+				background-color: #28a745;
+				color: white;
+			}
+			.badge-failed {
+				background-color: #dc3545;
+				color: white;
+			}
+			.badge-pending {
+				background-color: #6c757d;
+				color: white;
+			}
+			.badge-partial {
+				background-color: #ffc107;
+				color: #000;
+			}
+			.empty-state, .no-tests {
+				text-align: center;
+				padding: 30px;
+				color: var(--vscode-descriptionForeground);
+				font-style: italic;
+			}
+			.no-tests {
+				padding: 15px;
+			}
+			.evidences-section-mini {
+				margin-top: 10px;
+				padding-top: 10px;
+				border-top: 1px dashed var(--vscode-panel-border);
+				display: flex;
+				gap: 10px;
+				flex-wrap: wrap;
+			}
+			.evidence-thumb-container {
+				position: relative;
+				display: inline-block;
+			}
+			.evidence-thumb {
+				max-width: 150px;
+				max-height: 150px;
+				height: auto;
+				border: 1px solid var(--vscode-panel-border);
+				border-radius: 4px;
+				cursor: pointer;
+				transition: all 0.3s ease;
+				box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+			}
+			.evidence-thumb:hover {
+				box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+				transform: scale(1.05);
+			}
+			.evidence-thumb.enlarged {
+				max-width: none;
+				max-height: 90vh;
+				width: auto;
+				position: fixed;
+				top: 50%;
+				left: 50%;
+				transform: translate(-50%, -50%) !important;
+				z-index: 1000;
+				box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+			}
+			.evidence-thumb-caption {
+				display: block;
+				font-size: 0.75em;
+				color: var(--vscode-descriptionForeground);
+				margin-top: 3px;
+				text-align: center;
+				max-width: 150px;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+			.error-mini {
+				font-size: 0.8em;
+				color: var(--vscode-errorForeground);
+			}
+		</style>
+	</head>
+	<body>
+		<div class="report-header">
+			<h1>📊 Project Report</h1>
+			<div style="font-size: 1.1em; margin-top: 10px;">
+				<strong>Project:</strong> ${project.name}
+			</div>
+		</div>
+
+		<h2>📈 Overall Statistics</h2>
+		<div class="stats-grid">
+			<div class="stat-card">
+				<span class="stat-number">${totalRequirements}</span>
+				<div class="stat-label">Requirements</div>
+			</div>
+			<div class="stat-card">
+				<span class="stat-number">${totalTests}</span>
+				<div class="stat-label">Total Tests</div>
+			</div>
+			<div class="stat-card" style="border-left-color: #28a745;">
+				<span class="stat-number" style="color: #28a745;">${passedTests}</span>
+				<div class="stat-label">Passed</div>
+			</div>
+			<div class="stat-card" style="border-left-color: #dc3545;">
+				<span class="stat-number" style="color: #dc3545;">${failedTests}</span>
+				<div class="stat-label">Failed</div>
+			</div>
+			<div class="stat-card" style="border-left-color: #6c757d;">
+				<span class="stat-number" style="color: #6c757d;">${notExecutedTests}</span>
+				<div class="stat-label">Not Executed</div>
+			</div>
+		</div>
+
+		<h2>📋 Requirements & Test Cases</h2>
+		${requirementsHtml}
 	</body>
 	</html>`;
 }

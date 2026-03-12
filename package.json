@@ -84,6 +84,16 @@
         "command": "test-documentation.removeEvidence",
         "title": "Remove Evidence",
         "icon": "$(trash)"
+      },
+      {
+        "command": "test-documentation.viewRequirementReport",
+        "title": "View Requirement Report",
+        "icon": "$(file-text)"
+      },
+      {
+        "command": "test-documentation.viewProjectReport",
+        "title": "View Project Report",
+        "icon": "$(notebook)"
       }
     ],
     "menus": {
@@ -111,6 +121,10 @@
           "group": "inline"
         },
         {
+          "command": "test-documentation.viewProjectReport",
+          "when": "view == testProjectsView && viewItem == project"
+        },
+        {
           "command": "test-documentation.addTestCase",
           "when": "view == testProjectsView && viewItem == requirement",
           "group": "inline"
@@ -119,6 +133,10 @@
           "command": "test-documentation.deleteRequirement",
           "when": "view == testProjectsView && viewItem == requirement",
           "group": "inline"
+        },
+        {
+          "command": "test-documentation.viewRequirementReport",
+          "when": "view == testProjectsView && viewItem == requirement"
         },
         {
           "command": "test-documentation.executeTest",
