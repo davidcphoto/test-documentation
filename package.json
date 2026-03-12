@@ -1,0 +1,162 @@
+{
+  "name": "test-documentation",
+  "displayName": "Test Documentation",
+  "description": "Test Documentation on vs-code",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "testDocumentation",
+          "title": "Test Documentation",
+          "icon": "$(checklist)"
+        }
+      ]
+    },
+    "views": {
+      "testDocumentation": [
+        {
+          "id": "testProjectsView",
+          "name": "Test Projects"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "test-documentation.createProject",
+        "title": "Create Test Project",
+        "icon": "$(add)"
+      },
+      {
+        "command": "test-documentation.deleteProject",
+        "title": "Delete Test Project",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "test-documentation.addRequirement",
+        "title": "Add Test Requirement",
+        "icon": "$(add)"
+      },
+      {
+        "command": "test-documentation.deleteRequirement",
+        "title": "Delete Requirement",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "test-documentation.addTestCase",
+        "title": "Add Test Case",
+        "icon": "$(add)"
+      },
+      {
+        "command": "test-documentation.deleteTestCase",
+        "title": "Delete Test Case",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "test-documentation.executeTest",
+        "title": "Execute Test",
+        "icon": "$(play)"
+      },
+      {
+        "command": "test-documentation.addEvidence",
+        "title": "Add Evidence (Screenshot)",
+        "icon": "$(file-media)"
+      },
+      {
+        "command": "test-documentation.viewTestDetails",
+        "title": "View Test Details",
+        "icon": "$(info)"
+      },
+      {
+        "command": "test-documentation.refreshView",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "test-documentation.removeEvidence",
+        "title": "Remove Evidence",
+        "icon": "$(trash)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "test-documentation.createProject",
+          "when": "view == testProjectsView",
+          "group": "navigation"
+        },
+        {
+          "command": "test-documentation.refreshView",
+          "when": "view == testProjectsView",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "test-documentation.addRequirement",
+          "when": "view == testProjectsView && viewItem == project",
+          "group": "inline"
+        },
+        {
+          "command": "test-documentation.deleteProject",
+          "when": "view == testProjectsView && viewItem == project",
+          "group": "inline"
+        },
+        {
+          "command": "test-documentation.addTestCase",
+          "when": "view == testProjectsView && viewItem == requirement",
+          "group": "inline"
+        },
+        {
+          "command": "test-documentation.deleteRequirement",
+          "when": "view == testProjectsView && viewItem == requirement",
+          "group": "inline"
+        },
+        {
+          "command": "test-documentation.executeTest",
+          "when": "view == testProjectsView && viewItem == testCase",
+          "group": "inline"
+        },
+        {
+          "command": "test-documentation.addEvidence",
+          "when": "view == testProjectsView && viewItem == testCase"
+        },
+        {
+          "command": "test-documentation.viewTestDetails",
+          "when": "view == testProjectsView && viewItem == testCase"
+        },
+        {
+          "command": "test-documentation.deleteTestCase",
+          "when": "view == testProjectsView && viewItem == testCase"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "pretest": "npm run lint",
+    "test": "node ./test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.60.0",
+    "@types/mocha": "^10.0.2",
+    "@types/node": "18.x",
+    "eslint": "^8.50.0",
+    "glob": "^10.3.3",
+    "mocha": "^10.2.0",
+    "typescript": "^5.2.2",
+    "@vscode/test-electron": "^2.3.4"
+  },
+  "dependencies": {
+    "screenshot-desktop": "^1.12.7",
+    "sharp": "^0.32.0"
+  }
+}
