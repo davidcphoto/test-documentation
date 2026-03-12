@@ -1308,7 +1308,7 @@ function activate(context) {
 		})
 	);
 
-	// Command: View Project Report
+	// Command: View Test Report
 	context.subscriptions.push(
 		vscode.commands.registerCommand('test-documentation.viewProjectReport', async (item) => {
 			if (item && item instanceof ProjectTreeItem) {
@@ -1342,7 +1342,7 @@ function activate(context) {
 
 				const panel = vscode.window.createWebviewPanel(
 					'projectReport',
-					`Project Report: ${project.name}`,
+					`Test Report: ${project.name}`,
 					vscode.ViewColumn.One,
 					{ 
 						enableScripts: true,
@@ -1758,7 +1758,7 @@ function getRequirementReportContent(requirement, project, webview) {
 				margin-top: 5px;
 			}
 			.test-case-item {
-				background-color: var(--vscode-editor-inactiveSelectionBackground);
+				background-color: var(--vscode-editor-background);
 				padding: 20px;
 				margin: 15px 0;
 				border-radius: 6px;
@@ -1883,6 +1883,62 @@ function getRequirementReportContent(requirement, project, webview) {
 			.image-overlay.active {
 				display: block;
 			}
+			.stats-container {
+				display: block;
+				margin: 20px 0;
+			}
+			.stats-grid {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+				gap: 15px;
+				margin-bottom: 20px;
+			}
+			.chart-container {
+				display: flex;
+				flex-direction: row;
+				align-items: center;
+				justify-content: center;
+				gap: 30px;
+				margin-top: 20px;
+				background-color: var(--vscode-editor-inactiveSelectionBackground);
+				padding: 20px;
+				border-radius: 8px;
+			}
+			.chart-legend {
+				display: flex;
+				flex-direction: column;
+				gap: 8px;
+			}
+			.legend-item {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				font-size: 0.9em;
+			}
+			.legend-color {
+				width: 16px;
+				height: 16px;
+				border-radius: 3px;
+			}
+			.legend-label {
+				color: var(--vscode-foreground);
+			}
+			.requirements-wrapper {
+				background-color: var(--vscode-editor-inactiveSelectionBackground);
+				padding: 20px;
+				border-radius: 8px;
+				margin-top: 20px;
+			}
+			.requirements-wrapper h2 {
+				margin-top: 0;
+			}
+			.test-case-item {
+				background-color: var(--vscode-editor-background);
+				padding: 20px;
+				margin: 15px 0;
+				border-radius: 6px;
+				border-left: 4px solid var(--vscode-panel-border);
+			}
 		</style>
 	</head>
 	<body>
@@ -1897,29 +1953,50 @@ function getRequirementReportContent(requirement, project, webview) {
 		</div>
 
 		<h2>📊 Summary Statistics</h2>
-		<div class="stats-grid">
-			<div class="stat-card">
-				<span class="stat-number">${totalTests}</span>
-				<div class="stat-label">Total Tests</div>
+		<div class="stats-container">
+			<div class="stats-grid">
+				<div class="stat-card">
+					<span class="stat-number">${totalTests}</span>
+					<div class="stat-label">Total Tests</div>
+				</div>
+				<div class="stat-card" style="border-left-color: #28a745;">
+					<span class="stat-number" style="color: #28a745;">${passedTests}</span>
+					<div class="stat-label">Passed</div>
+				</div>
+				<div class="stat-card" style="border-left-color: #dc3545;">
+					<span class="stat-number" style="color: #dc3545;">${failedTests}</span>
+					<div class="stat-label">Failed</div>
+				</div>
+				<div class="stat-card" style="border-left-color: #6c757d;">
+					<span class="stat-number" style="color: #6c757d;">${notExecutedTests}</span>
+					<div class="stat-label">Not Executed</div>
+				</div>
 			</div>
-			<div class="stat-card" style="border-left-color: #28a745;">
-				<span class="stat-number" style="color: #28a745;">${passedTests}</span>
-				<div class="stat-label">Passed</div>
-			</div>
-			<div class="stat-card" style="border-left-color: #dc3545;">
-				<span class="stat-number" style="color: #dc3545;">${failedTests}</span>
-				<div class="stat-label">Failed</div>
-			</div>
-			<div class="stat-card" style="border-left-color: #6c757d;">
-				<span class="stat-number" style="color: #6c757d;">${notExecutedTests}</span>
-				<div class="stat-label">Not Executed</div>
+			<div class="chart-container">
+				<svg id="pieChart" width="250" height="250" viewBox="0 0 250 250"></svg>
+				<div class="chart-legend">
+					<div class="legend-item">
+						<span class="legend-color" style="background-color: #28a745;"></span>
+						<span class="legend-label">Passed (${passedTests})</span>
+					</div>
+					<div class="legend-item">
+						<span class="legend-color" style="background-color: #dc3545;"></span>
+						<span class="legend-label">Failed (${failedTests})</span>
+					</div>
+					<div class="legend-item">
+						<span class="legend-color" style="background-color: #6c757d;"></span>
+						<span class="legend-label">Not Executed (${notExecutedTests})</span>
+					</div>
+				</div>
 			</div>
 		</div>
 
+	<div class="requirements-wrapper">
 		<h2>🧪 Test Cases</h2>
 		${testsHtml}
-		
-		<div class="image-overlay" id="imageOverlay" onclick="closeImageZoom()"></div>
+	</div>
+	
+	<div class="image-overlay" id="imageOverlay" onclick="closeImageZoom()"></div>
 		
 		<script>
 			function toggleImageZoom(img) {
@@ -1938,31 +2015,91 @@ function getRequirementReportContent(requirement, project, webview) {
 				images.forEach(img => img.classList.remove('enlarged'));
 				document.getElementById('imageOverlay').classList.remove('active');
 			}
-		</script>
-	</body>
-	</html>`;
+		
+		// Draw pie chart
+		function drawPieChart(passed, failed, notExecuted) {
+			const total = passed + failed + notExecuted;
+			if (total === 0) return;
+			
+			const svg = document.getElementById('pieChart');
+			const centerX = 125;
+			const centerY = 125;
+			const radius = 80;
+			
+			const data = [
+				{ value: passed, color: '#28a745', label: 'Passed' },
+				{ value: failed, color: '#dc3545', label: 'Failed' },
+				{ value: notExecuted, color: '#6c757d', label: 'Not Executed' }
+			];
+			
+			let currentAngle = -90; // Start from top
+			
+			data.forEach(segment => {
+				if (segment.value === 0) return;
+				
+				const sliceAngle = (segment.value / total) * 360;
+				const startAngle = currentAngle;
+				const endAngle = currentAngle + sliceAngle;
+				
+				const startRad = (startAngle * Math.PI) / 180;
+				const endRad = (endAngle * Math.PI) / 180;
+				
+				const x1 = centerX + radius * Math.cos(startRad);
+				const y1 = centerY + radius * Math.sin(startRad);
+				const x2 = centerX + radius * Math.cos(endRad);
+				const y2 = centerY + radius * Math.sin(endRad);
+				
+				const largeArc = sliceAngle > 180 ? 1 : 0;
+				
+				const pathData = [
+				'M ' + centerX + ' ' + centerY,
+				'L ' + x1 + ' ' + y1,
+				'A ' + radius + ' ' + radius + ' 0 ' + largeArc + ' 1 ' + x2 + ' ' + y2,
+				'Z'
+			].join(' ');
+			
+			const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+			path.setAttribute('d', pathData);
+			path.setAttribute('fill', segment.color);
+			path.setAttribute('stroke', 'var(--vscode-editor-background)');
+			path.setAttribute('stroke-width', '2');
+			
+			const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+			title.textContent = segment.label + ': ' + segment.value + ' (' + ((segment.value/total)*100).toFixed(1) + '%)';
+			path.appendChild(title);
+			
+			svg.appendChild(path);
+			currentAngle = endAngle;
+		});
+	}
+		
+		// Draw chart on load
+		drawPieChart(${passedTests}, ${failedTests}, ${notExecutedTests});
+	</script>
+</body>
+</html>`;
 }
 
 function getProjectReportContent(project, webview) {
-	const requirementsList = project.requirements || [];
-	const totalRequirements = requirementsList.length;
+	const requirements = project.requirements || [];
+	const totalRequirements = requirements.length;
 	
 	let totalTests = 0;
 	let passedTests = 0;
 	let failedTests = 0;
 	let notExecutedTests = 0;
-
-	requirementsList.forEach(req => {
-		const tests = req.testCases || [];
-		totalTests += tests.length;
-		passedTests += tests.filter(tc => tc.executed && tc.passed).length;
-		failedTests += tests.filter(tc => tc.executed && !tc.passed).length;
-		notExecutedTests += tests.filter(tc => !tc.executed).length;
+	
+	requirements.forEach(req => {
+		const testCases = req.testCases || [];
+		totalTests += testCases.length;
+		passedTests += testCases.filter(tc => tc.executed && tc.passed).length;
+		failedTests += testCases.filter(tc => tc.executed && !tc.passed).length;
+		notExecutedTests += testCases.filter(tc => !tc.executed).length;
 	});
-
+	
 	let requirementsHtml = '';
-	if (requirementsList.length > 0) {
-		requirementsList.forEach((requirement, reqIndex) => {
+	if (requirements.length > 0) {
+		requirements.forEach((requirement, reqIndex) => {
 			const testCases = requirement.testCases || [];
 			const reqTotalTests = testCases.length;
 			const reqPassedTests = testCases.filter(tc => tc.executed && tc.passed).length;
@@ -2027,6 +2164,7 @@ function getProjectReportContent(project, webview) {
 								${descriptionInfo}
 								<p><strong>Expected Result:</strong> ${testCase.expectedResult}</p>
 								${testCase.executed ? `<p><strong>Executed By:</strong> ${testCase.executedBy} on ${testCase.executionDate}</p>` : ''}
+								${testCase.observations ? `<p><strong>Observations:</strong> ${testCase.observations}</p>` : ''}
 								${evidenceHtml}
 							</div>
 						</div>
@@ -2063,7 +2201,7 @@ function getProjectReportContent(project, webview) {
 	<head>
 		<meta charset="UTF-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1.0">
-		<title>Project Report</title>
+		<title>Test Report</title>
 		<style>
 			body {
 				font-family: var(--vscode-font-family);
@@ -2092,11 +2230,15 @@ function getProjectReportContent(project, webview) {
 				border-radius: 8px;
 				margin-bottom: 30px;
 			}
+			.stats-container {
+				display: block;
+				margin: 20px 0;
+			}
 			.stats-grid {
 				display: grid;
 				grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 				gap: 15px;
-				margin: 20px 0;
+				margin-bottom: 20px;
 			}
 			.stat-card {
 				background-color: var(--vscode-editor-inactiveSelectionBackground);
@@ -2116,16 +2258,55 @@ function getProjectReportContent(project, webview) {
 				color: var(--vscode-descriptionForeground);
 				margin-top: 8px;
 			}
+			.chart-container {
+				display: flex;
+				flex-direction: row;
+				align-items: center;
+				justify-content: center;
+				gap: 30px;
+				margin-top: 20px;
+				background-color: var(--vscode-editor-inactiveSelectionBackground);
+				padding: 20px;
+				border-radius: 8px;
+			}
+			.chart-legend {
+				display: flex;
+				flex-direction: column;
+				gap: 8px;
+			}
+			.legend-item {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				font-size: 0.9em;
+			}
+			.legend-color {
+				width: 16px;
+				height: 16px;
+				border-radius: 3px;
+			}
+			.legend-label {
+				color: var(--vscode-foreground);
+			}
+			.requirements-wrapper {
+				background-color: var(--vscode-editor-inactiveSelectionBackground);
+				padding: 20px;
+				border-radius: 8px;
+				margin-top: 20px;
+			}
+			.requirements-wrapper h2 {
+				margin-top: 0;
+			}
 			.requirement-section {
 				background-color: var(--vscode-editor-inactiveSelectionBackground);
 				padding: 20px;
-				margin: 20px 0;
+				margin-bottom: 20px;
 				border-radius: 8px;
 				border-left: 4px solid var(--vscode-textLink-foreground);
 			}
 			.requirement-header {
 				display: flex;
-				justify-content: space-between;
+				justify-between: space-between;
 				align-items: center;
 				margin-bottom: 15px;
 				padding-bottom: 10px;
@@ -2279,43 +2460,64 @@ function getProjectReportContent(project, webview) {
 	</head>
 	<body>
 		<div class="report-header">
-			<h1>📊 Project Report</h1>
+			<h1>📊 Test Report</h1>
 			<div style="font-size: 1.1em; margin-top: 10px;">
 				<strong>Project:</strong> ${project.name}
 			</div>
 		</div>
 
 		<h2>📈 Overall Statistics</h2>
-		<div class="stats-grid">
-			<div class="stat-card">
-				<span class="stat-number">${totalRequirements}</span>
-				<div class="stat-label">Requirements</div>
+		<div class="stats-container">
+			<div class="stats-grid">
+				<div class="stat-card">
+					<span class="stat-number">${totalRequirements}</span>
+					<div class="stat-label">Requirements</div>
+				</div>
+				<div class="stat-card">
+					<span class="stat-number">${totalTests}</span>
+					<div class="stat-label">Total Tests</div>
+				</div>
+				<div class="stat-card" style="border-left-color: #28a745;">
+					<span class="stat-number" style="color: #28a745;">${passedTests}</span>
+					<div class="stat-label">Passed</div>
+				</div>
+				<div class="stat-card" style="border-left-color: #dc3545;">
+					<span class="stat-number" style="color: #dc3545;">${failedTests}</span>
+					<div class="stat-label">Failed</div>
+				</div>
+				<div class="stat-card" style="border-left-color: #6c757d;">
+					<span class="stat-number" style="color: #6c757d;">${notExecutedTests}</span>
+					<div class="stat-label">Not Executed</div>
+				</div>
 			</div>
-			<div class="stat-card">
-				<span class="stat-number">${totalTests}</span>
-				<div class="stat-label">Total Tests</div>
-			</div>
-			<div class="stat-card" style="border-left-color: #28a745;">
-				<span class="stat-number" style="color: #28a745;">${passedTests}</span>
-				<div class="stat-label">Passed</div>
-			</div>
-			<div class="stat-card" style="border-left-color: #dc3545;">
-				<span class="stat-number" style="color: #dc3545;">${failedTests}</span>
-				<div class="stat-label">Failed</div>
-			</div>
-			<div class="stat-card" style="border-left-color: #6c757d;">
-				<span class="stat-number" style="color: #6c757d;">${notExecutedTests}</span>
-				<div class="stat-label">Not Executed</div>
+			<div class="chart-container">
+				<svg id="pieChart" width="250" height="250" viewBox="0 0 250 250"></svg>
+				<div class="chart-legend">
+					<div class="legend-item">
+						<span class="legend-color" style="background-color: #28a745;"></span>
+						<span class="legend-label">Passed (${passedTests})</span>
+					</div>
+					<div class="legend-item">
+						<span class="legend-color" style="background-color: #dc3545;"></span>
+						<span class="legend-label">Failed (${failedTests})</span>
+					</div>
+					<div class="legend-item">
+						<span class="legend-color" style="background-color: #6c757d;"></span>
+						<span class="legend-label">Not Executed (${notExecutedTests})</span>
+					</div>
+				</div>
 			</div>
 		</div>
 
+	<div class="requirements-wrapper">
 		<h2>📋 Requirements & Test Cases</h2>
 		${requirementsHtml}
-		
-		<div class="image-overlay" id="imageOverlay" onclick="closeImageZoom()"></div>
-		
-		<script>
-			function toggleImageZoom(img) {
+	</div>
+	
+	<div class="image-overlay" id="imageOverlay" onclick="closeImageZoom()"></div>
+	
+	<script>
+		function toggleImageZoom(img) {
 				const overlay = document.getElementById('imageOverlay');
 				if (img.classList.contains('enlarged')) {
 					img.classList.remove('enlarged');
@@ -2331,6 +2533,66 @@ function getProjectReportContent(project, webview) {
 				images.forEach(img => img.classList.remove('enlarged'));
 				document.getElementById('imageOverlay').classList.remove('active');
 			}
+			
+			// Draw pie chart
+			function drawPieChart(passed, failed, notExecuted) {
+				const total = passed + failed + notExecuted;
+				if (total === 0) return;
+				
+				const svg = document.getElementById('pieChart');
+				const centerX = 125;
+				const centerY = 125;
+				const radius = 80;
+				
+				const data = [
+					{ value: passed, color: '#28a745', label: 'Passed' },
+					{ value: failed, color: '#dc3545', label: 'Failed' },
+					{ value: notExecuted, color: '#6c757d', label: 'Not Executed' }
+				];
+				
+				let currentAngle = -90; // Start from top
+				
+				data.forEach(segment => {
+					if (segment.value === 0) return;
+					
+					const sliceAngle = (segment.value / total) * 360;
+					const startAngle = currentAngle;
+					const endAngle = currentAngle + sliceAngle;
+					
+					const startRad = (startAngle * Math.PI) / 180;
+					const endRad = (endAngle * Math.PI) / 180;
+					
+					const x1 = centerX + radius * Math.cos(startRad);
+					const y1 = centerY + radius * Math.sin(startRad);
+					const x2 = centerX + radius * Math.cos(endRad);
+					const y2 = centerY + radius * Math.sin(endRad);
+					
+					const largeArc = sliceAngle > 180 ? 1 : 0;
+					
+					const pathData = [
+						'M ' + centerX + ' ' + centerY,
+						'L ' + x1 + ' ' + y1,
+						'A ' + radius + ' ' + radius + ' 0 ' + largeArc + ' 1 ' + x2 + ' ' + y2,
+						'Z'
+					].join(' ');
+					
+					const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+					path.setAttribute('d', pathData);
+					path.setAttribute('fill', segment.color);
+					path.setAttribute('stroke', 'var(--vscode-editor-background)');
+					path.setAttribute('stroke-width', '2');
+					
+					const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+					title.textContent = segment.label + ': ' + segment.value + ' (' + ((segment.value/total)*100).toFixed(1) + '%)';
+					path.appendChild(title);
+					
+					svg.appendChild(path);
+					currentAngle = endAngle;
+				});
+			}
+			
+			// Draw chart on load
+			drawPieChart(${passedTests}, ${failedTests}, ${notExecutedTests});
 		</script>
 	</body>
 	</html>`;
