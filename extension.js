@@ -719,13 +719,13 @@ $hwnd = [Win32]::GetForegroundWindow();
 async function restoreVSCodeWindow() {
 	try {
 		console.log('Attempting to restore VS Code window...');
-		
+
 		if (process.platform === 'win32') {
 			// Windows: Use PowerShell to restore and activate VS Code window
 			// Try multiple times to ensure window is restored
 			for (let attempt = 1; attempt <= 3; attempt++) {
 				console.log(`Restore attempt ${attempt}/3`);
-				
+
 				const psScript = `
 Add-Type -TypeDefinition @'
 using System;
@@ -754,25 +754,25 @@ if ($processes.Count -gt 0) {
 	Write-Output "NO_PROCESS";
 }
 				`.trim();
-				
+
 				const tempFile = path.join(require('os').tmpdir(), 'restore_vscode.ps1');
 				fs.writeFileSync(tempFile, psScript);
-				
+
 				const result = await execAsync(`powershell -ExecutionPolicy Bypass -File "${tempFile}"`);
-				
+
 				try {
 					fs.unlinkSync(tempFile);
 				} catch (e) {
 					// Ignore cleanup errors
 				}
-				
+
 				console.log('PowerShell result:', result.stdout.trim());
-				
+
 				if (result.stdout.includes('SUCCESS')) {
 					console.log('VS Code window restored successfully (Windows)');
 					break;
 				}
-				
+
 				// Wait before retry
 				if (attempt < 3) {
 					await new Promise(resolve => setTimeout(resolve, 200));
@@ -791,17 +791,17 @@ if ($processes.Count -gt 0) {
 				console.log('Could not restore on Linux (wmctrl may not be installed)');
 			}
 		}
-		
+
 		// Also use VS Code command to ensure focus
 		console.log('Executing VS Code focus command...');
 		await vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup');
 		console.log('Focus command executed');
-		
+
 	} catch (error) {
 		console.error('Error restoring window:', error);
 		console.error('Error details:', error.message);
 		console.error('Stack:', error.stack);
-		
+
 		// Fallback: try VS Code command anyway
 		try {
 			console.log('Attempting fallback restore...');
@@ -2569,12 +2569,31 @@ function getProjectReportContent(project, webview) {
 	let failedTests = 0;
 	let notExecutedTests = 0;
 
+	// Calculate requirement status
+	let passedRequirements = 0;
+	let failedRequirements = 0;
+	let notExecutedRequirements = 0;
+
 	requirements.forEach(req => {
 		const testCases = req.testCases || [];
 		totalTests += testCases.length;
 		passedTests += testCases.filter(tc => tc.executed && tc.passed).length;
 		failedTests += testCases.filter(tc => tc.executed && !tc.passed).length;
 		notExecutedTests += testCases.filter(tc => !tc.executed).length;
+
+		// Determine requirement status
+		const reqPassedTests = testCases.filter(tc => tc.executed && tc.passed).length;
+		const reqFailedTests = testCases.filter(tc => tc.executed && !tc.passed).length;
+		const reqTotalTests = testCases.length;
+		const reqExecutedTests = testCases.filter(tc => tc.executed).length;
+
+		if (reqTotalTests === 0 || reqExecutedTests === 0) {
+			notExecutedRequirements++;
+		} else if (reqFailedTests > 0) {
+			failedRequirements++;
+		} else if (reqPassedTests === reqTotalTests) {
+			passedRequirements++;
+		}
 	});
 
 	let requirementsHtml = '';
@@ -2763,16 +2782,30 @@ function getProjectReportContent(project, webview) {
 				color: var(--vscode-descriptionForeground);
 				margin-top: 8px;
 			}
-			.chart-container {
+			.charts-wrapper {
 				display: flex;
 				flex-direction: row;
-				align-items: center;
+				align-items: flex-start;
 				justify-content: center;
-				gap: 30px;
+				gap: 40px;
 				margin-top: 20px;
 				background-color: var(--vscode-editor-inactiveSelectionBackground);
 				padding: 20px;
 				border-radius: 8px;
+				flex-wrap: wrap;
+			}
+			.chart-container {
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				gap: 20px;
+				min-width: 300px;
+			}
+			.chart-title {
+				font-size: 1.1em;
+				font-weight: bold;
+				color: var(--vscode-foreground);
+				text-align: center;
 			}
 			.chart-legend {
 				display: flex;
@@ -2961,6 +2994,7 @@ function getProjectReportContent(project, webview) {
 			.image-overlay.active {
 				display: block;
 			}
+
 		</style>
 	</head>
 	<body>
@@ -2999,8 +3033,13 @@ function getProjectReportContent(project, webview) {
 					<div class="stat-label">Not Executed</div>
 				</div>
 			</div>
+		</div>
+
+	<h2>📊 Visual Overview</h2>
+	<div class="charts-wrapper">
 			<div class="chart-container">
-				<svg id="pieChart" width="250" height="250" viewBox="0 0 250 250"></svg>
+				<div class="chart-title">Test Cases Status</div>
+				<svg id="pieChartTests" width="250" height="250" viewBox="0 0 250 250"></svg>
 				<div class="chart-legend">
 					<div class="legend-item">
 						<span class="legend-color" style="background-color: #28a745;"></span>
@@ -3013,6 +3052,24 @@ function getProjectReportContent(project, webview) {
 					<div class="legend-item">
 						<span class="legend-color" style="background-color: #6c757d;"></span>
 						<span class="legend-label">Not Executed (${notExecutedTests})</span>
+					</div>
+				</div>
+			</div>
+			<div class="chart-container">
+				<div class="chart-title">Requirements Status</div>
+				<svg id="pieChartRequirements" width="250" height="250" viewBox="0 0 250 250"></svg>
+				<div class="chart-legend">
+					<div class="legend-item">
+						<span class="legend-color" style="background-color: #28a745;"></span>
+						<span class="legend-label">Aprovados (${passedRequirements})</span>
+					</div>
+					<div class="legend-item">
+						<span class="legend-color" style="background-color: #dc3545;"></span>
+						<span class="legend-label">Falhados (${failedRequirements})</span>
+					</div>
+					<div class="legend-item">
+						<span class="legend-color" style="background-color: #6c757d;"></span>
+						<span class="legend-label">Não Executados (${notExecutedRequirements})</span>
 					</div>
 				</div>
 			</div>
@@ -3045,20 +3102,20 @@ function getProjectReportContent(project, webview) {
 				document.getElementById('imageOverlay').classList.remove('active');
 			}
 
-			// Draw pie chart
-			function drawPieChart(passed, failed, notExecuted) {
+			// Draw pie chart function
+			function drawPieChart(svgId, passed, failed, notExecuted, labels) {
 				const total = passed + failed + notExecuted;
 				if (total === 0) return;
 
-				const svg = document.getElementById('pieChart');
+				const svg = document.getElementById(svgId);
 				const centerX = 125;
 				const centerY = 125;
 				const radius = 80;
 
 				const data = [
-					{ value: passed, color: '#28a745', label: 'Passed' },
-					{ value: failed, color: '#dc3545', label: 'Failed' },
-					{ value: notExecuted, color: '#6c757d', label: 'Not Executed' }
+					{ value: passed, color: '#28a745', label: labels[0] },
+					{ value: failed, color: '#dc3545', label: labels[1] },
+					{ value: notExecuted, color: '#6c757d', label: labels[2] }
 				];
 
 				let currentAngle = -90; // Start from top
@@ -3102,8 +3159,9 @@ function getProjectReportContent(project, webview) {
 				});
 			}
 
-			// Draw chart on load
-			drawPieChart(${passedTests}, ${failedTests}, ${notExecutedTests});
+			// Draw charts on load
+			drawPieChart('pieChartTests', ${passedTests}, ${failedTests}, ${notExecutedTests}, ['Passed', 'Failed', 'Not Executed']);
+			drawPieChart('pieChartRequirements', ${passedRequirements}, ${failedRequirements}, ${notExecutedRequirements}, ['Aprovados', 'Falhados', 'Não Executados']);
 
 			// Export to PDF function
 			function exportToPDF() {
@@ -3279,12 +3337,31 @@ function getProjectReportHTMLForExport(project) {
 	let failedTests = 0;
 	let notExecutedTests = 0;
 
+	// Calculate requirement status
+	let passedRequirements = 0;
+	let failedRequirements = 0;
+	let notExecutedRequirements = 0;
+
 	requirements.forEach(req => {
 		const testCases = req.testCases || [];
 		totalTests += testCases.length;
 		passedTests += testCases.filter(tc => tc.executed && tc.passed).length;
 		failedTests += testCases.filter(tc => tc.executed && !tc.passed).length;
 		notExecutedTests += testCases.filter(tc => !tc.executed).length;
+
+		// Determine requirement status
+		const reqPassedTests = testCases.filter(tc => tc.executed && tc.passed).length;
+		const reqFailedTests = testCases.filter(tc => tc.executed && !tc.passed).length;
+		const reqTotalTests = testCases.length;
+		const reqExecutedTests = testCases.filter(tc => tc.executed).length;
+
+		if (reqTotalTests === 0 || reqExecutedTests === 0) {
+			notExecutedRequirements++;
+		} else if (reqFailedTests > 0) {
+			failedRequirements++;
+		} else if (reqPassedTests === reqTotalTests) {
+			passedRequirements++;
+		}
 	});
 
 	let requirementsHtml = '';
@@ -3426,6 +3503,15 @@ function getProjectReportHTMLForExport(project) {
 		.evidence-thumb { width: 70%; height: auto; border: 1px solid #ccc; border-radius: 4px; }
 		.evidence-thumb-caption { display: block; font-size: 0.75em; color: #666; margin-top: 3px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 		.error-mini { font-size: 0.8em; color: #dc3545; }
+		
+		/* Charts styles */
+		.charts-wrapper { display: flex; flex-direction: row; align-items: flex-start; justify-content: center; gap: 40px; margin: 20px 0; background-color: #f8f8f8; padding: 20px; border-radius: 8px; flex-wrap: wrap; }
+		.chart-container { display: flex; flex-direction: column; align-items: center; gap: 20px; min-width: 300px; }
+		.chart-title { font-size: 1.1em; font-weight: bold; color: #333; text-align: center; }
+		.chart-legend { display: flex; flex-direction: column; gap: 8px; }
+		.chart-legend-item { display: flex; align-items: center; gap: 8px; font-size: 0.9em; }
+		.chart-legend-color { width: 20px; height: 20px; border-radius: 4px; }
+		
 		@media print { body { padding: 10px; } .requirement-section, .test-item { page-break-inside: avoid; } }
 	</style>
 </head>
@@ -3460,8 +3546,110 @@ function getProjectReportHTMLForExport(project) {
 		</div>
 	</div>
 
-	<h2>📋 Requirements & Test Cases</h2>
+	<h2>�
+	<div class="charts-wrapper">
+		<div class="chart-container">
+			<div class="chart-title">Test Cases Status</div>
+			<svg id="pieChartTests" width="250" height="250" viewBox="0 0 250 250"></svg>
+			<div class="chart-legend">
+				<div class="chart-legend-item">
+					<div class="chart-legend-color" style="background-color: #28a745;"></div>
+					<span>Passed (${passedTests})</span>
+				</div>
+				<div class="chart-legend-item">
+					<div class="chart-legend-color" style="background-color: #dc3545;"></div>
+					<span>Failed (${failedTests})</span>
+				</div>
+				<div class="chart-legend-item">
+					<div class="chart-legend-color" style="background-color: #6c757d;"></div>
+					<span>Not Executed (${notExecutedTests})</span>
+				</div>
+			</div>
+		</div>
+		<div class="chart-container">
+			<div class="chart-title">Requirements Status</div>
+			<svg id="pieChartRequirements" width="250" height="250" viewBox="0 0 250 250"></svg>
+			<div class="chart-legend">
+				<div class="chart-legend-item">
+					<div class="chart-legend-color" style="background-color: #28a745;"></div>
+					<span>Aprovados (${passedRequirements})</span>
+				</div>
+				<div class="chart-legend-item">
+					<div class="chart-legend-color" style="background-color: #dc3545;"></div>
+					<span>Falhados (${failedRequirements})</span>
+				</div>
+				<div class="chart-legend-item">
+					<div class="chart-legend-color" style="background-color: #6c757d;"></div>
+					<span>Não Executados (${notExecutedRequirements})</span>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<h2>�📋 Requirements & Test Cases</h2>
 	${requirementsHtml}
+	<script>
+		// Draw pie chart function
+		function drawPieChart(svgId, passed, failed, notExecuted, labels) {
+			const total = passed + failed + notExecuted;
+			if (total === 0) return;
+
+			const svg = document.getElementById(svgId);
+			const centerX = 125;
+			const centerY = 125;
+			const radius = 80;
+
+			const data = [
+				{ value: passed, color: '#28a745', label: labels[0] },
+				{ value: failed, color: '#dc3545', label: labels[1] },
+				{ value: notExecuted, color: '#6c757d', label: labels[2] }
+			];
+
+			let currentAngle = -90;
+
+			data.forEach(segment => {
+				if (segment.value === 0) return;
+
+				const sliceAngle = (segment.value / total) * 360;
+				const startAngle = currentAngle;
+				const endAngle = currentAngle + sliceAngle;
+
+				const startRad = (startAngle * Math.PI) / 180;
+				const endRad = (endAngle * Math.PI) / 180;
+
+				const x1 = centerX + radius * Math.cos(startRad);
+				const y1 = centerY + radius * Math.sin(startRad);
+				const x2 = centerX + radius * Math.cos(endRad);
+				const y2 = centerY + radius * Math.sin(endRad);
+
+				const largeArc = sliceAngle > 180 ? 1 : 0;
+
+				const pathData = [
+					'M ' + centerX + ' ' + centerY,
+					'L ' + x1 + ' ' + y1,
+					'A ' + radius + ' ' + radius + ' 0 ' + largeArc + ' 1 ' + x2 + ' ' + y2,
+					'Z'
+				].join(' ');
+
+				const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+				path.setAttribute('d', pathData);
+				path.setAttribute('fill', segment.color);
+				path.setAttribute('stroke', '#fff');
+				path.setAttribute('stroke-width', '2');
+
+				const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+				title.textContent = segment.label + ': ' + segment.value + ' (' + ((segment.value/total)*100).toFixed(1) + '%)';
+				path.appendChild(title);
+
+				svg.appendChild(path);
+				currentAngle = endAngle;
+			});
+		}
+
+		// Draw charts on load
+		drawPieChart('pieChartTests', ${passedTests}, ${failedTests}, ${notExecutedTests}, ['Passed', 'Failed', 'Not Executed']);
+		drawPieChart('pieChartRequirements', ${passedRequirements}, ${failedRequirements}, ${notExecutedRequirements}, ['Aprovados', 'Falhados', 'Não Executados']);
+	</script>
 </body>
 </html>`;
 }
