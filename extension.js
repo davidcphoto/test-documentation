@@ -1,6 +1,10 @@
 const vscode = require('vscode');
 const fs = require('fs');
 const path = require('path');
+const { exec } = require('child_process');
+const util = require('util');
+const execAsync = util.promisify(exec);
+
 let screenshot = null;
 let sharp = null;
 
@@ -67,9 +71,9 @@ class ProjectTreeItem extends vscode.TreeItem {
 		super(project.name, vscode.TreeItemCollapsibleState.Collapsed);
 		this.contextValue = 'project';
 		this.project = project;
-		
+
 		const status = this.getProjectStatus();
-		
+
 		// Set icon based on project status
 		if (status.allPassed) {
 			this.iconPath = new vscode.ThemeIcon('pass', new vscode.ThemeColor('testing.iconPassed'));
@@ -80,7 +84,7 @@ class ProjectTreeItem extends vscode.TreeItem {
 		} else {
 			this.iconPath = new vscode.ThemeIcon('folder');
 		}
-		
+
 		const parts = [`${this.getRequirementCount()} requirements`];
 		if (status.allPassed) {
 			parts.push('✓ All Passed');
@@ -93,21 +97,21 @@ class ProjectTreeItem extends vscode.TreeItem {
 	getRequirementCount() {
 		return this.project.requirements ? this.project.requirements.length : 0;
 	}
-	
+
 	getProjectStatus() {
 		let totalTests = 0;
 		let totalExecuted = 0;
 		let totalPassed = 0;
 		let allRequirementsPassed = true;
 		let hasRequirements = false;
-		
+
 		if (this.project.requirements && this.project.requirements.length > 0) {
 			hasRequirements = true;
 			for (const req of this.project.requirements) {
 				if (req.testCases && req.testCases.length > 0) {
 					let reqAllExecuted = true;
 					let reqAllPassed = true;
-					
+
 					for (const tc of req.testCases) {
 						totalTests++;
 						if (tc.executed) {
@@ -122,7 +126,7 @@ class ProjectTreeItem extends vscode.TreeItem {
 							reqAllPassed = false;
 						}
 					}
-					
+
 					if (!reqAllExecuted || !reqAllPassed) {
 						allRequirementsPassed = false;
 					}
@@ -133,7 +137,7 @@ class ProjectTreeItem extends vscode.TreeItem {
 		} else {
 			allRequirementsPassed = false;
 		}
-		
+
 		return {
 			allPassed: hasRequirements && totalTests > 0 && totalTests === totalExecuted && totalExecuted === totalPassed && allRequirementsPassed,
 			anyFailed: totalExecuted > 0 && totalPassed < totalExecuted,
@@ -151,9 +155,9 @@ class RequirementTreeItem extends vscode.TreeItem {
 		this.contextValue = 'requirement';
 		this.requirement = requirement;
 		this.projectId = projectId;
-		
+
 		const status = this.getRequirementStatus();
-		
+
 		// Set icon based on requirement status
 		if (status.allPassed) {
 			this.iconPath = new vscode.ThemeIcon('pass', new vscode.ThemeColor('testing.iconPassed'));
@@ -164,7 +168,7 @@ class RequirementTreeItem extends vscode.TreeItem {
 		} else {
 			this.iconPath = new vscode.ThemeIcon('file-text');
 		}
-		
+
 		const parts = [`${this.getTestCaseCount()} test cases`];
 		if (status.allPassed) {
 			parts.push('✓ All Passed');
@@ -172,7 +176,7 @@ class RequirementTreeItem extends vscode.TreeItem {
 			parts.push(`${status.passed}/${status.executed} passed`);
 		}
 		this.description = parts.join(' | ');
-		
+
 		let tooltip = requirement.name;
 		if (requirement.description) {
 			tooltip += `\n\n${requirement.description}`;
@@ -188,12 +192,12 @@ class RequirementTreeItem extends vscode.TreeItem {
 	getTestCaseCount() {
 		return this.requirement.testCases ? this.requirement.testCases.length : 0;
 	}
-	
+
 	getRequirementStatus() {
 		let total = 0;
 		let executed = 0;
 		let passed = 0;
-		
+
 		if (this.requirement.testCases && this.requirement.testCases.length > 0) {
 			for (const tc of this.requirement.testCases) {
 				total++;
@@ -205,7 +209,7 @@ class RequirementTreeItem extends vscode.TreeItem {
 				}
 			}
 		}
-		
+
 		return {
 			allPassed: total > 0 && total === executed && executed === passed,
 			anyFailed: executed > 0 && passed < executed,
@@ -224,7 +228,7 @@ class TestCaseTreeItem extends vscode.TreeItem {
 		this.testCase = testCase;
 		this.projectId = projectId;
 		this.requirementId = requirementId;
-		
+
 		// Set icon based on test status
 		if (testCase.executed) {
 			this.iconPath = new vscode.ThemeIcon(
@@ -246,7 +250,7 @@ class TestCaseTreeItem extends vscode.TreeItem {
 			parts.push(`${testCase.evidences.length} evidence(s)`);
 		}
 		this.description = parts.join(' | ');
-		
+
 		// Tooltip
 		let tooltip = `${testCase.name}\n\nExpected Result: ${testCase.expectedResult}`;
 		if (testCase.executed) {
@@ -285,13 +289,13 @@ class TestProjectsProvider {
 		} else if (element instanceof ProjectTreeItem) {
 			// Show requirements
 			const requirements = element.project.requirements || [];
-			return Promise.resolve(requirements.map(r => 
+			return Promise.resolve(requirements.map(r =>
 				new RequirementTreeItem(r, element.project.id)
 			));
 		} else if (element instanceof RequirementTreeItem) {
 			// Show test cases
 			const testCases = element.requirement.testCases || [];
-			return Promise.resolve(testCases.map(tc => 
+			return Promise.resolve(testCases.map(tc =>
 				new TestCaseTreeItem(tc, element.projectId, element.requirement.id)
 			));
 		}
@@ -303,7 +307,7 @@ class TestProjectsProvider {
 async function openCropEditor(imagePath, workspaceFolder) {
 	return new Promise((resolve) => {
 		let resolved = false; // Flag to prevent multiple resolves
-		
+
 		const panel = vscode.window.createWebviewPanel(
 			'imageCrop',
 			'Crop Screenshot',
@@ -325,7 +329,7 @@ async function openCropEditor(imagePath, workspaceFolder) {
 					case 'crop':
 						try {
 							console.log('Crop command received with data:', message.cropData);
-							
+
 							if (!sharp) {
 								const errorMsg = 'Sharp module not available. Please ensure sharp is installed by running: npm install\n\nThen reload the window (F1 → Developer: Reload Window)';
 								vscode.window.showErrorMessage(errorMsg);
@@ -335,25 +339,25 @@ async function openCropEditor(imagePath, workspaceFolder) {
 							}
 
 							const { x, y, width, height } = message.cropData;
-							
+
 							console.log('Starting crop operation...');
 							console.log('Crop area:', { x, y, width, height });
 							console.log('Original image path:', imagePath);
 							console.log('Workspace folder:', workspaceFolder);
-							
+
 							// Create cropped image
 							const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('.')[0];
 							const croppedFileName = `cropped_${timestamp}.png`;
 							const evidenceDir = path.resolve(path.join(workspaceFolder, 'test-evidences'));
-							
+
 							console.log('Evidence directory:', evidenceDir);
-							
+
 							// Ensure directory exists
 							if (!fs.existsSync(evidenceDir)) {
 								fs.mkdirSync(evidenceDir, { recursive: true });
 								console.log('Created evidence directory:', evidenceDir);
 							}
-							
+
 							const croppedFilePath = path.join(evidenceDir, croppedFileName);
 							console.log('Target cropped file path:', croppedFilePath);
 
@@ -366,7 +370,7 @@ async function openCropEditor(imagePath, workspaceFolder) {
 									height: Math.round(height)
 								})
 								.toFile(croppedFilePath);
-							
+
 							console.log('Sharp crop completed successfully');
 
 							// Verify the cropped file was created
@@ -388,8 +392,8 @@ async function openCropEditor(imagePath, workspaceFolder) {
 							resolved = true; // Mark as resolved
 							panel.dispose();
 							console.log('Resolving with cropped image data:', { fileName: croppedFileName, filePath: croppedFilePath, cropped: true });
-							resolve({ 
-								fileName: croppedFileName, 
+							resolve({
+								fileName: croppedFileName,
 								filePath: croppedFilePath,
 								cropped: true
 							});
@@ -406,8 +410,8 @@ async function openCropEditor(imagePath, workspaceFolder) {
 					case 'skip':
 						resolved = true; // Mark as resolved
 						panel.dispose();
-						resolve({ 
-							fileName: path.basename(imagePath), 
+						resolve({
+							fileName: path.basename(imagePath),
 							filePath: imagePath,
 							cropped: false
 						});
@@ -543,14 +547,14 @@ function getCropEditorHTML(imageUri) {
 				Click and drag on the image to select the area you want to keep.
 			</div>
 		</div>
-		
+
 		<div class="canvas-container" id="canvasContainer">
 			<canvas id="imageCanvas"></canvas>
 			<div class="crop-rect" id="cropRect" style="display: none;"></div>
 		</div>
-		
+
 		<div class="crop-info" id="cropInfo"></div>
-		
+
 		<div class="buttons">
 			<button class="btn-primary" id="cropBtn" disabled>Crop & Save</button>
 			<button class="btn-secondary" id="skipBtn">Skip Crop (Use Full Image)</button>
@@ -566,7 +570,7 @@ function getCropEditorHTML(imageUri) {
 			const cropBtn = document.getElementById('cropBtn');
 			const skipBtn = document.getElementById('skipBtn');
 			const cancelBtn = document.getElementById('cancelBtn');
-			
+
 			let img = new Image();
 			let isDrawing = false;
 			let startX, startY, endX, endY;
@@ -588,27 +592,27 @@ function getCropEditorHTML(imageUri) {
 
 			canvas.addEventListener('mousemove', (e) => {
 				if (!isDrawing) return;
-				
+
 				const rect = canvas.getBoundingClientRect();
 				endX = e.clientX - rect.left;
 				endY = e.clientY - rect.top;
-				
+
 				// Redraw image
 				ctx.clearRect(0, 0, canvas.width, canvas.height);
 				ctx.drawImage(img, 0, 0);
-				
+
 				// Draw selection rectangle
 				const width = endX - startX;
 				const height = endY - startY;
-				
+
 				ctx.strokeStyle = '#00ff00';
 				ctx.lineWidth = 2;
 				ctx.setLineDash([5, 5]);
 				ctx.strokeRect(startX, startY, width, height);
-				
+
 				ctx.fillStyle = 'rgba(0, 255, 0, 0.1)';
 				ctx.fillRect(startX, startY, width, height);
-				
+
 				// Update info
 				cropInfo.textContent = \`Selection: \${Math.abs(width).toFixed(0)} x \${Math.abs(height).toFixed(0)} pixels\`;
 			});
@@ -616,17 +620,17 @@ function getCropEditorHTML(imageUri) {
 			canvas.addEventListener('mouseup', (e) => {
 				if (!isDrawing) return;
 				isDrawing = false;
-				
+
 				const rect = canvas.getBoundingClientRect();
 				endX = e.clientX - rect.left;
 				endY = e.clientY - rect.top;
-				
+
 				// Calculate crop area
 				const x = Math.min(startX, endX);
 				const y = Math.min(startY, endY);
 				const width = Math.abs(endX - startX);
 				const height = Math.abs(endY - startY);
-				
+
 				if (width > 10 && height > 10) {
 					cropData = { x, y, width, height };
 					cropBtn.disabled = false;
@@ -656,6 +660,156 @@ function getCropEditorHTML(imageUri) {
 		</script>
 	</body>
 	</html>`;
+}
+
+// Window Management Helper Functions
+async function minimizeVSCodeWindow() {
+	try {
+		if (process.platform === 'win32') {
+			// Windows: Use PowerShell to minimize VS Code window
+			const psScript = `
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public class Win32 {
+	[DllImport("user32.dll")]
+	public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+	[DllImport("user32.dll")]
+	public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+	[DllImport("user32.dll")]
+	public static extern IntPtr GetForegroundWindow();
+}
+'@;
+$hwnd = [Win32]::GetForegroundWindow();
+[Win32]::ShowWindow($hwnd, 6);
+			`.trim();
+
+			const tempFile = path.join(require('os').tmpdir(), 'minimize_vscode.ps1');
+			fs.writeFileSync(tempFile, psScript);
+
+			await execAsync(`powershell -ExecutionPolicy Bypass -File "${tempFile}"`);
+
+			try {
+				fs.unlinkSync(tempFile);
+			} catch (e) {
+				// Ignore cleanup errors
+			}
+
+			console.log('VS Code window minimized');
+		} else if (process.platform === 'darwin') {
+			// macOS: Hide the current application
+			await execAsync('osascript -e "tell application \\"System Events\\" to set visible of process \\"Code\\" to false"');
+			console.log('VS Code window hidden on macOS');
+		} else {
+			// Linux: Minimize using wmctrl if available
+			try {
+				await execAsync('wmctrl -r :ACTIVE: -b add,hidden');
+				console.log('VS Code window minimized on Linux');
+			} catch (error) {
+				console.log('Could not minimize on Linux (wmctrl may not be installed)');
+			}
+		}
+	} catch (error) {
+		console.error('Error minimizing window:', error);
+		console.error('Error details:', error.message);
+		// Non-critical error, continue anyway
+	}
+}
+
+async function restoreVSCodeWindow() {
+	try {
+		console.log('Attempting to restore VS Code window...');
+		
+		if (process.platform === 'win32') {
+			// Windows: Use PowerShell to restore and activate VS Code window
+			// Try multiple times to ensure window is restored
+			for (let attempt = 1; attempt <= 3; attempt++) {
+				console.log(`Restore attempt ${attempt}/3`);
+				
+				const psScript = `
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Diagnostics;
+public class Win32 {
+	[DllImport("user32.dll")]
+	public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+	[DllImport("user32.dll")]
+	public static extern bool SetForegroundWindow(IntPtr hWnd);
+	[DllImport("user32.dll")]
+	public static extern IntPtr GetForegroundWindow();
+}
+'@;
+$processes = Get-Process | Where-Object { $_.ProcessName -like "*Code*" -and $_.MainWindowTitle -ne "" };
+if ($processes.Count -gt 0) {
+	$hwnd = $processes[0].MainWindowHandle;
+	[Win32]::ShowWindow($hwnd, 9);
+	Start-Sleep -Milliseconds 150;
+	[Win32]::SetForegroundWindow($hwnd);
+	Start-Sleep -Milliseconds 100;
+	# Ensure it's really in foreground
+	[Win32]::SetForegroundWindow($hwnd);
+	Write-Output "SUCCESS";
+} else {
+	Write-Output "NO_PROCESS";
+}
+				`.trim();
+				
+				const tempFile = path.join(require('os').tmpdir(), 'restore_vscode.ps1');
+				fs.writeFileSync(tempFile, psScript);
+				
+				const result = await execAsync(`powershell -ExecutionPolicy Bypass -File "${tempFile}"`);
+				
+				try {
+					fs.unlinkSync(tempFile);
+				} catch (e) {
+					// Ignore cleanup errors
+				}
+				
+				console.log('PowerShell result:', result.stdout.trim());
+				
+				if (result.stdout.includes('SUCCESS')) {
+					console.log('VS Code window restored successfully (Windows)');
+					break;
+				}
+				
+				// Wait before retry
+				if (attempt < 3) {
+					await new Promise(resolve => setTimeout(resolve, 200));
+				}
+			}
+		} else if (process.platform === 'darwin') {
+			// macOS: Restore VS Code
+			await execAsync('osascript -e "tell application \\"Visual Studio Code\\" to activate"');
+			console.log('VS Code window restored (macOS)');
+		} else {
+			// Linux: Restore using wmctrl if available
+			try {
+				await execAsync('wmctrl -a "Visual Studio Code"');
+				console.log('VS Code window restored (Linux)');
+			} catch (error) {
+				console.log('Could not restore on Linux (wmctrl may not be installed)');
+			}
+		}
+		
+		// Also use VS Code command to ensure focus
+		console.log('Executing VS Code focus command...');
+		await vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup');
+		console.log('Focus command executed');
+		
+	} catch (error) {
+		console.error('Error restoring window:', error);
+		console.error('Error details:', error.message);
+		console.error('Stack:', error.stack);
+		
+		// Fallback: try VS Code command anyway
+		try {
+			console.log('Attempting fallback restore...');
+			await vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup');
+		} catch (fallbackError) {
+			console.error('Fallback restore also failed:', fallbackError);
+		}
+	}
 }
 
 // Screenshot Helper Functions
@@ -791,7 +945,7 @@ function activate(context) {
 		vscode.commands.registerCommand('test-documentation.deleteRequirement', async (item) => {
 			if (item && item instanceof RequirementTreeItem) {
 				const project = dataManager.getProject(item.projectId);
-				
+
 				const confirm = await vscode.window.showWarningMessage(
 					`Are you sure you want to delete requirement "${item.requirement.name}"?`,
 					'Yes', 'No'
@@ -845,7 +999,7 @@ function activate(context) {
 
 							const project = dataManager.getProject(item.projectId);
 							const requirement = project.requirements.find(r => r.id === item.requirement.id);
-							
+
 							if (!requirement.testCases) {
 								requirement.testCases = [];
 							}
@@ -866,7 +1020,7 @@ function activate(context) {
 		vscode.commands.registerCommand('test-documentation.deleteTestCase', async (item) => {
 			if (item && item instanceof TestCaseTreeItem) {
 				const project = dataManager.getProject(item.projectId);
-				
+
 				const confirm = await vscode.window.showWarningMessage(
 					`Are you sure you want to delete test case "${item.testCase.name}"?`,
 					'Yes', 'No'
@@ -889,7 +1043,7 @@ function activate(context) {
 			if (item && item instanceof TestCaseTreeItem) {
 				// Retrieve last executor from global state
 				const lastExecutor = context.globalState.get('lastExecutor', '');
-				
+
 				const executedBy = await vscode.window.showInputBox({
 					prompt: 'Enter your name',
 					placeHolder: 'John Doe',
@@ -918,10 +1072,10 @@ function activate(context) {
 						testCase.observations = observations || '';
 
 						await dataManager.updateProject(project.id, project);
-						
+
 						// Save executor name for future use
 						await context.globalState.update('lastExecutor', executedBy);
-						
+
 						treeProvider.refresh();
 						vscode.window.showInformationMessage(`Test execution recorded!`);
 					}
@@ -951,10 +1105,14 @@ function activate(context) {
 				const testCase = requirement.testCases.find(tc => tc.id === item.testCase.id);
 
 				if (method.value === 'capture') {
+					// Get configured delay from settings
+					const config = vscode.workspace.getConfiguration('testDocumentation');
+					const delaySeconds = config.get('screenshotDelay', 3);
+
 					// Capture screenshot option
 					const captureOption = await vscode.window.showQuickPick([
 						{ label: '🖥️ Capture Immediate Screenshot', value: 'immediate' },
-						{ label: '🪟 Capture with 3s Delay (switch to window)', value: 'delayed' }
+						{ label: `🪟 Capture with ${delaySeconds}s Delay`, value: 'delayed' }
 					], {
 						placeHolder: 'What would you like to capture?'
 					});
@@ -974,27 +1132,43 @@ function activate(context) {
 
 					try {
 						let description = '';
-						
+
 						if (captureOption.value === 'delayed') {
 							// Ask for window description
 							description = await vscode.window.showInputBox({
 								prompt: 'Enter a description for this screenshot (optional)',
 								placeHolder: 'e.g., Login Screen, Error Dialog'
 							}) || 'screenshot';
-							
-							// Show countdown
-							vscode.window.showInformationMessage('Switch to the window you want to capture. Screenshot in 3 seconds...');
-							await new Promise(resolve => setTimeout(resolve, 3000));
+
+							// Use the delay configured in settings
+							const delayMs = delaySeconds * 1000;
+
+							// Show countdown message
+							vscode.window.showInformationMessage(`Switch to the target window now. Screenshot will be captured in ${delaySeconds} second${delaySeconds !== 1 ? 's' : ''}...`);
+
+							// Minimize VS Code window to allow user to see the target window clearly
+							await minimizeVSCodeWindow();
+
+							// Small delay to ensure window is fully minimized
+							await new Promise(resolve => setTimeout(resolve, 300));
+
+							// Wait for the configured delay
+							await new Promise(resolve => setTimeout(resolve, delayMs));
 						}
-						
+
 						// Capture screenshot
-						const captureResult = await vscode.window.withProgress({
-							location: vscode.ProgressLocation.Notification,
-							title: "Capturing screenshot...",
-							cancellable: false
-						}, async () => {
-							return await captureScreenshot(workspaceFolder, description);
-						});
+						console.log('Starting screenshot capture...');
+						const captureResult = await captureScreenshot(workspaceFolder, description);
+						console.log('Screenshot captured:', captureResult);
+
+						// Restore VS Code window if it was minimized
+						if (captureOption.value === 'delayed') {
+							console.log('Restoring VS Code window...');
+							await restoreVSCodeWindow();
+							// Longer delay to ensure window is fully restored and ready
+							await new Promise(resolve => setTimeout(resolve, 500));
+							console.log('Window restoration complete');
+						}
 
 						// Ask if user wants to crop
 						const cropChoice = await vscode.window.showQuickPick([
@@ -1011,12 +1185,12 @@ function activate(context) {
 							console.log('Opening crop editor for:', captureResult.filePath);
 							const cropResult = await openCropEditor(captureResult.filePath, workspaceFolder);
 							console.log('Crop editor returned result:', cropResult);
-							
+
 							if (cropResult.cancelled) {
 								vscode.window.showInformationMessage('Screenshot cancelled.');
 								return;
 							}
-							
+
 							finalResult = cropResult;
 						}
 
@@ -1040,10 +1214,22 @@ function activate(context) {
 
 						await dataManager.updateProject(project.id, project);
 						treeProvider.refresh();
-						
+
 						const cropMsg = finalResult.cropped ? ' (cropped)' : '';
 						vscode.window.showInformationMessage(`Screenshot captured successfully${cropMsg}!`);
 					} catch (error) {
+						console.error('Error capturing screenshot:', error);
+						console.error('Error stack:', error.stack);
+
+						// Restore window if an error occurred during delayed capture
+						if (captureOption && captureOption.value === 'delayed') {
+							try {
+								await restoreVSCodeWindow();
+							} catch (restoreError) {
+								console.error('Failed to restore window after error:', restoreError);
+							}
+						}
+
 						vscode.window.showErrorMessage(`Failed to capture screenshot: ${error.message}`);
 					}
 				} else {
@@ -1100,7 +1286,7 @@ function activate(context) {
 						resourceRoots.push(vscode.Uri.file(dir));
 					});
 				}
-				
+
 				// Always add workspace folder if available
 				const workspaceFolders = vscode.workspace.workspaceFolders;
 				if (workspaceFolders && workspaceFolders.length > 0) {
@@ -1111,7 +1297,7 @@ function activate(context) {
 					'testDetails',
 					`Test Case: ${testCase.name}`,
 					vscode.ViewColumn.One,
-					{ 
+					{
 						enableScripts: true,
 						localResourceRoots: resourceRoots.length > 0 ? resourceRoots : undefined
 					}
@@ -1166,9 +1352,9 @@ function activate(context) {
 		vscode.commands.registerCommand('test-documentation.removeEvidence', async (args) => {
 			try {
 				console.log('Remove evidence called with args:', args);
-				
+
 				const { projectId, requirementId, testCaseId, evidenceId } = args;
-				
+
 				const projects = dataManager.getProjects();
 				const project = projects.find(p => p.id === projectId);
 				if (!project) {
@@ -1210,7 +1396,7 @@ function activate(context) {
 				}
 
 				const evidence = testCase.evidences[evidenceIndex];
-				
+
 				// Confirm deletion
 				const confirm = await vscode.window.showWarningMessage(
 					`Remove evidence "${evidence.fileName}"?`,
@@ -1238,12 +1424,12 @@ function activate(context) {
 
 				// Remove from array
 				testCase.evidences.splice(evidenceIndex, 1);
-				
+
 				await dataManager.updateProject(project.id, project);
 				treeProvider.refresh();
-				
+
 				vscode.window.showInformationMessage('Evidence removed successfully.');
-				
+
 				// Refresh the webview if it's open
 				if (args.refreshWebview) {
 					args.refreshWebview();
@@ -1297,10 +1483,59 @@ function activate(context) {
 					'requirementReport',
 					`Requirement Report: ${requirement.name}`,
 					vscode.ViewColumn.One,
-					{ 
+					{
 						enableScripts: true,
 						localResourceRoots: resourceRoots.length > 0 ? resourceRoots : undefined
 					}
+				);
+
+				// Handle messages from the webview
+				panel.webview.onDidReceiveMessage(
+					async message => {
+						if (message.command === 'exportToPDF') {
+							try {
+								const workspaceFolders = vscode.workspace.workspaceFolders;
+								if (!workspaceFolders || workspaceFolders.length === 0) {
+									vscode.window.showErrorMessage('Please open a workspace folder first.');
+									return;
+								}
+
+								const workspaceFolder = workspaceFolders[0].uri.fsPath;
+								const reportsDir = path.join(workspaceFolder, 'test-reports');
+
+								// Create reports directory if it doesn't exist
+								if (!fs.existsSync(reportsDir)) {
+									fs.mkdirSync(reportsDir, { recursive: true });
+								}
+
+								const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('.')[0];
+								const fileName = `${requirement.name.replace(/[^a-z0-9]/gi, '_')}_report_${timestamp}.html`;
+								const filePath = path.join(reportsDir, fileName);
+
+								// Get HTML content without VS Code specific styles
+								const htmlContent = getRequirementReportHTMLForExport(requirement, project);
+								fs.writeFileSync(filePath, htmlContent, 'utf8');
+
+								// Ask user what to do next
+								const action = await vscode.window.showInformationMessage(
+									`Report saved to ${fileName}`,
+									'Open in Browser',
+									'Show in Folder'
+								);
+
+								if (action === 'Open in Browser') {
+									vscode.env.openExternal(vscode.Uri.file(filePath));
+									vscode.window.showInformationMessage('Use Ctrl+P (Cmd+P on Mac) in the browser to print or save as PDF');
+								} else if (action === 'Show in Folder') {
+									vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(filePath));
+								}
+							} catch (error) {
+								vscode.window.showErrorMessage(`Failed to export report: ${error.message}`);
+							}
+						}
+					},
+					undefined,
+					context.subscriptions
 				);
 
 				panel.webview.html = getRequirementReportContent(requirement, project, panel.webview);
@@ -1344,13 +1579,214 @@ function activate(context) {
 					'projectReport',
 					`Test Report: ${project.name}`,
 					vscode.ViewColumn.One,
-					{ 
+					{
 						enableScripts: true,
 						localResourceRoots: resourceRoots.length > 0 ? resourceRoots : undefined
 					}
 				);
 
+				// Handle messages from the webview
+				panel.webview.onDidReceiveMessage(
+					async message => {
+						if (message.command === 'exportToPDF') {
+							try {
+								const workspaceFolders = vscode.workspace.workspaceFolders;
+								if (!workspaceFolders || workspaceFolders.length === 0) {
+									vscode.window.showErrorMessage('Please open a workspace folder first.');
+									return;
+								}
+
+								const workspaceFolder = workspaceFolders[0].uri.fsPath;
+								const reportsDir = path.join(workspaceFolder, 'test-reports');
+
+								// Create reports directory if it doesn't exist
+								if (!fs.existsSync(reportsDir)) {
+									fs.mkdirSync(reportsDir, { recursive: true });
+								}
+
+								const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('.')[0];
+								const fileName = `${project.name.replace(/[^a-z0-9]/gi, '_')}_report_${timestamp}.html`;
+								const filePath = path.join(reportsDir, fileName);
+
+								// Get HTML content without VS Code specific styles
+								const htmlContent = getProjectReportHTMLForExport(project);
+								fs.writeFileSync(filePath, htmlContent, 'utf8');
+
+								// Ask user what to do next
+								const action = await vscode.window.showInformationMessage(
+									`Report saved to ${fileName}`,
+									'Open in Browser',
+									'Show in Folder'
+								);
+
+								if (action === 'Open in Browser') {
+									vscode.env.openExternal(vscode.Uri.file(filePath));
+									vscode.window.showInformationMessage('Use Ctrl+P (Cmd+P on Mac) in the browser to print or save as PDF');
+								} else if (action === 'Show in Folder') {
+									vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(filePath));
+								}
+							} catch (error) {
+								vscode.window.showErrorMessage(`Failed to export report: ${error.message}`);
+							}
+						}
+					},
+					undefined,
+					context.subscriptions
+				);
+
 				panel.webview.html = getProjectReportContent(project, panel.webview);
+			}
+		})
+	);
+
+	// Command: Export Project
+	context.subscriptions.push(
+		vscode.commands.registerCommand('test-documentation.exportProject', async (item) => {
+			if (item && item instanceof ProjectTreeItem) {
+				const project = item.project;
+
+				// Ask user where to save the file
+				const saveUri = await vscode.window.showSaveDialog({
+					defaultUri: vscode.Uri.file(path.join(
+						vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '',
+						`${project.name.replace(/[^a-z0-9]/gi, '_')}_export.json`
+					)),
+					filters: {
+						'JSON Files': ['json'],
+						'All Files': ['*']
+					},
+					saveLabel: 'Export Project'
+				});
+
+				if (saveUri) {
+					try {
+						// Create export data structure
+						const exportData = {
+							exportVersion: '1.0',
+							exportDate: new Date().toISOString(),
+							project: project
+						};
+
+						// Write to file
+						fs.writeFileSync(saveUri.fsPath, JSON.stringify(exportData, null, 2), 'utf8');
+
+						vscode.window.showInformationMessage(`Project "${project.name}" exported successfully!`);
+					} catch (error) {
+						vscode.window.showErrorMessage(`Failed to export project: ${error.message}`);
+					}
+				}
+			}
+		})
+	);
+
+	// Command: Import Project
+	context.subscriptions.push(
+		vscode.commands.registerCommand('test-documentation.importProject', async () => {
+			// Ask user to select file to import
+			const fileUris = await vscode.window.showOpenDialog({
+				canSelectMany: false,
+				filters: {
+					'JSON Files': ['json'],
+					'All Files': ['*']
+				},
+				openLabel: 'Import Project'
+			});
+
+			if (fileUris && fileUris.length > 0) {
+				try {
+					// Read file
+					const fileContent = fs.readFileSync(fileUris[0].fsPath, 'utf8');
+					const importData = JSON.parse(fileContent);
+
+					// Validate import data
+					if (!importData.project) {
+						throw new Error('Invalid export file format. Missing project data.');
+					}
+
+					const project = importData.project;
+
+					// Ask user if they want to import with a new name or keep existing
+					const action = await vscode.window.showQuickPick([
+						{ label: 'Import as new project', value: 'new' },
+						{ label: 'Overwrite existing project (if same ID)', value: 'overwrite' }
+					], {
+						placeHolder: 'How would you like to import this project?'
+					});
+
+					if (!action) {
+						return;
+					}
+
+					if (action.value === 'new') {
+						// Generate new IDs for project, requirements, test cases, and evidences
+						project.id = Date.now().toString();
+						project.createdDate = new Date().toISOString();
+
+						// Ask for new project name
+						const newName = await vscode.window.showInputBox({
+							prompt: 'Enter a name for the imported project',
+							value: `${project.name} (Imported)`,
+							placeHolder: 'Project name'
+						});
+
+						if (!newName) {
+							return;
+						}
+
+						project.name = newName;
+
+						// Update requirement IDs
+						if (project.requirements) {
+							project.requirements.forEach(req => {
+								req.id = Date.now().toString() + Math.random();
+								req.createdDate = new Date().toISOString();
+
+								// Update test case IDs
+								if (req.testCases) {
+									req.testCases.forEach(tc => {
+										tc.id = Date.now().toString() + Math.random();
+										tc.createdDate = new Date().toISOString();
+
+										// Update evidence IDs
+										if (tc.evidences) {
+											tc.evidences.forEach(ev => {
+												ev.id = Date.now().toString() + Math.random();
+											});
+										}
+									});
+								}
+							});
+						}
+
+						await dataManager.addProject(project);
+						vscode.window.showInformationMessage(`Project "${project.name}" imported successfully!`);
+					} else {
+						// Overwrite mode - check if project with same ID exists
+						const existingProject = dataManager.getProject(project.id);
+
+						if (existingProject) {
+							const confirm = await vscode.window.showWarningMessage(
+								`A project with ID "${project.id}" already exists. Do you want to overwrite it?`,
+								{ modal: true },
+								'Yes', 'No'
+							);
+
+							if (confirm !== 'Yes') {
+								return;
+							}
+
+							await dataManager.updateProject(project.id, project);
+							vscode.window.showInformationMessage(`Project "${project.name}" updated successfully!`);
+						} else {
+							await dataManager.addProject(project);
+							vscode.window.showInformationMessage(`Project "${project.name}" imported successfully!`);
+						}
+					}
+
+					treeProvider.refresh();
+				} catch (error) {
+					vscode.window.showErrorMessage(`Failed to import project: ${error.message}`);
+				}
 			}
 		})
 	);
@@ -1367,7 +1803,7 @@ function getWebviewContent(testCase, webview) {
 			const descriptionInfo = evidence.description ? `<p><strong>Description:</strong> ${evidence.description}</p>` : '';
 			const windowInfo = evidence.windowTitle ? `<p><strong>Window:</strong> ${evidence.windowTitle}</p>` : '';
 			const croppedInfo = evidence.cropped ? `<p><strong>Cropped:</strong> Yes ✂️</p>` : '';
-			
+
 			// Convert file path to webview URI
 			let imageHtml = '';
 			console.log('Processing evidence:', evidence.fileName, 'Path:', evidence.filePath, 'Exists:', fs.existsSync(evidence.filePath));
@@ -1389,7 +1825,7 @@ function getWebviewContent(testCase, webview) {
 				console.error('Image file not found or path is invalid');
 				imageHtml = `<p class="error">Image file not found: ${evidence.filePath}</p>`;
 			}
-			
+
 			evidencesHtml += `
 				<div class="evidence-item">
 					<div class="evidence-header">
@@ -1409,9 +1845,9 @@ function getWebviewContent(testCase, webview) {
 		evidencesHtml += '</div>';
 	}
 
-	const statusBadge = testCase.executed 
-		? (testCase.passed 
-			? '<span class="badge badge-success">✓ Passed</span>' 
+	const statusBadge = testCase.executed
+		? (testCase.passed
+			? '<span class="badge badge-success">✓ Passed</span>'
 			: '<span class="badge badge-failed">✗ Failed</span>')
 		: '<span class="badge badge-pending">Not Executed</span>';
 
@@ -1559,7 +1995,7 @@ function getWebviewContent(testCase, webview) {
 	</head>
 	<body>
 		<h1>${testCase.name}</h1>
-		
+
 		<div class="info-section">
 			<div class="info-row">
 				<span class="label">Status:</span> ${statusBadge}
@@ -1591,19 +2027,19 @@ function getWebviewContent(testCase, webview) {
 		</div>
 
 		${evidencesHtml}
-		
+
 		<div class="image-overlay" id="imageOverlay" onclick="closeImageZoom()"></div>
-		
+
 		<script>
 			const vscode = acquireVsCodeApi();
-			
+
 			function removeEvidence(evidenceId) {
 				vscode.postMessage({
 					command: 'removeEvidence',
 					evidenceId: evidenceId
 				});
 			}
-			
+
 			function toggleImageZoom(img) {
 				const overlay = document.getElementById('imageOverlay');
 				if (img.classList.contains('enlarged')) {
@@ -1614,7 +2050,7 @@ function getWebviewContent(testCase, webview) {
 					overlay.classList.add('active');
 				}
 			}
-			
+
 			function closeImageZoom() {
 				const images = document.querySelectorAll('.evidence-image.enlarged');
 				images.forEach(img => img.classList.remove('enlarged'));
@@ -1636,9 +2072,9 @@ function getRequirementReportContent(requirement, project, webview) {
 	let testsHtml = '';
 	if (testCasesList.length > 0) {
 		testCasesList.forEach((testCase, index) => {
-			const statusBadge = testCase.executed 
-				? (testCase.passed 
-					? '<span class="badge badge-success">✓ Passed</span>' 
+			const statusBadge = testCase.executed
+				? (testCase.passed
+					? '<span class="badge badge-success">✓ Passed</span>'
 					: '<span class="badge badge-failed">✗ Failed</span>')
 				: '<span class="badge badge-pending">○ Not Executed</span>';
 
@@ -1722,7 +2158,32 @@ function getRequirementReportContent(requirement, project, webview) {
 				margin-top: 30px;
 				margin-bottom: 15px;
 			}
+			.export-pdf-btn {
+				position: absolute;
+				top: 20px;
+				right: 20px;
+				background-color: var(--vscode-button-background);
+				color: var(--vscode-button-foreground);
+				border: none;
+				padding: 10px 20px;
+				border-radius: 4px;
+				cursor: pointer;
+				font-size: 14px;
+				font-weight: bold;
+				display: flex;
+				align-items: center;
+				gap: 8px;
+			}
+			.export-pdf-btn:hover {
+				background-color: var(--vscode-button-hoverBackground);
+			}
+			@media print {
+				.export-pdf-btn {
+					display: none;
+				}
+			}
 			.report-header {
+				position: relative;
 				background: linear-gradient(135deg, var(--vscode-editor-inactiveSelectionBackground) 0%, var(--vscode-editor-selectionBackground) 100%);
 				padding: 20px;
 				border-radius: 8px;
@@ -1943,6 +2404,10 @@ function getRequirementReportContent(requirement, project, webview) {
 	</head>
 	<body>
 		<div class="report-header">
+			<button class="export-pdf-btn" onclick="exportToPDF()" title="Export to PDF">
+				<span>📄</span>
+				<span>Export to PDF</span>
+			</button>
 			<h1>📋 Requirement Report</h1>
 			<div class="project-info">
 				<strong>Project:</strong> ${project.name}
@@ -1995,10 +2460,12 @@ function getRequirementReportContent(requirement, project, webview) {
 		<h2>🧪 Test Cases</h2>
 		${testsHtml}
 	</div>
-	
+
 	<div class="image-overlay" id="imageOverlay" onclick="closeImageZoom()"></div>
-		
+
 		<script>
+			const vscode = acquireVsCodeApi();
+
 			function toggleImageZoom(img) {
 				const overlay = document.getElementById('imageOverlay');
 				if (img.classList.contains('enlarged')) {
@@ -2009,72 +2476,85 @@ function getRequirementReportContent(requirement, project, webview) {
 					overlay.classList.add('active');
 				}
 			}
-			
+
 			function closeImageZoom() {
 				const images = document.querySelectorAll('.evidence-thumbnail.enlarged, .evidence-thumb.enlarged');
 				images.forEach(img => img.classList.remove('enlarged'));
 				document.getElementById('imageOverlay').classList.remove('active');
 			}
-		
+
 		// Draw pie chart
 		function drawPieChart(passed, failed, notExecuted) {
 			const total = passed + failed + notExecuted;
 			if (total === 0) return;
-			
+
 			const svg = document.getElementById('pieChart');
 			const centerX = 125;
 			const centerY = 125;
 			const radius = 80;
-			
+
 			const data = [
 				{ value: passed, color: '#28a745', label: 'Passed' },
 				{ value: failed, color: '#dc3545', label: 'Failed' },
 				{ value: notExecuted, color: '#6c757d', label: 'Not Executed' }
 			];
-			
+
 			let currentAngle = -90; // Start from top
-			
+
 			data.forEach(segment => {
 				if (segment.value === 0) return;
-				
+
 				const sliceAngle = (segment.value / total) * 360;
 				const startAngle = currentAngle;
 				const endAngle = currentAngle + sliceAngle;
-				
+
 				const startRad = (startAngle * Math.PI) / 180;
 				const endRad = (endAngle * Math.PI) / 180;
-				
+
 				const x1 = centerX + radius * Math.cos(startRad);
 				const y1 = centerY + radius * Math.sin(startRad);
 				const x2 = centerX + radius * Math.cos(endRad);
 				const y2 = centerY + radius * Math.sin(endRad);
-				
+
 				const largeArc = sliceAngle > 180 ? 1 : 0;
-				
+
 				const pathData = [
 				'M ' + centerX + ' ' + centerY,
 				'L ' + x1 + ' ' + y1,
 				'A ' + radius + ' ' + radius + ' 0 ' + largeArc + ' 1 ' + x2 + ' ' + y2,
 				'Z'
 			].join(' ');
-			
+
 			const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
 			path.setAttribute('d', pathData);
 			path.setAttribute('fill', segment.color);
 			path.setAttribute('stroke', 'var(--vscode-editor-background)');
 			path.setAttribute('stroke-width', '2');
-			
+
 			const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
 			title.textContent = segment.label + ': ' + segment.value + ' (' + ((segment.value/total)*100).toFixed(1) + '%)';
 			path.appendChild(title);
-			
+
 			svg.appendChild(path);
 			currentAngle = endAngle;
 		});
 	}
-		
+
 		// Draw chart on load
 		drawPieChart(${passedTests}, ${failedTests}, ${notExecutedTests});
+
+		// Export to PDF function
+		function exportToPDF() {
+			try {
+				console.log('Exporting requirement report to PDF...');
+				vscode.postMessage({
+					command: 'exportToPDF'
+				});
+			} catch (error) {
+				console.error('Error exporting to PDF:', error);
+				alert('Error exporting report. Please try again.');
+			}
+		}
 	</script>
 </body>
 </html>`;
@@ -2083,12 +2563,12 @@ function getRequirementReportContent(requirement, project, webview) {
 function getProjectReportContent(project, webview) {
 	const requirements = project.requirements || [];
 	const totalRequirements = requirements.length;
-	
+
 	let totalTests = 0;
 	let passedTests = 0;
 	let failedTests = 0;
 	let notExecutedTests = 0;
-	
+
 	requirements.forEach(req => {
 		const testCases = req.testCases || [];
 		totalTests += testCases.length;
@@ -2096,7 +2576,7 @@ function getProjectReportContent(project, webview) {
 		failedTests += testCases.filter(tc => tc.executed && !tc.passed).length;
 		notExecutedTests += testCases.filter(tc => !tc.executed).length;
 	});
-	
+
 	let requirementsHtml = '';
 	if (requirements.length > 0) {
 		requirements.forEach((requirement, reqIndex) => {
@@ -2121,9 +2601,9 @@ function getProjectReportContent(project, webview) {
 			let testsHtml = '';
 			if (testCases.length > 0) {
 				testCases.forEach((testCase, testIndex) => {
-					const statusBadge = testCase.executed 
-						? (testCase.passed 
-							? '<span class="badge badge-success">✓ Passed</span>' 
+					const statusBadge = testCase.executed
+						? (testCase.passed
+							? '<span class="badge badge-success">✓ Passed</span>'
 							: '<span class="badge badge-failed">✗ Failed</span>')
 						: '<span class="badge badge-pending">○ Not Executed</span>';
 
@@ -2224,7 +2704,32 @@ function getProjectReportContent(project, webview) {
 				margin: 0;
 				color: var(--vscode-textLink-foreground);
 			}
+			.export-pdf-btn {
+				position: absolute;
+				top: 20px;
+				right: 20px;
+				background-color: var(--vscode-button-background);
+				color: var(--vscode-button-foreground);
+				border: none;
+				padding: 10px 20px;
+				border-radius: 4px;
+				cursor: pointer;
+				font-size: 14px;
+				font-weight: bold;
+				display: flex;
+				align-items: center;
+				gap: 8px;
+			}
+			.export-pdf-btn:hover {
+				background-color: var(--vscode-button-hoverBackground);
+			}
+			@media print {
+				.export-pdf-btn {
+					display: none;
+				}
+			}
 			.report-header {
+				position: relative;
 				background: linear-gradient(135deg, var(--vscode-editor-inactiveSelectionBackground) 0%, var(--vscode-editor-selectionBackground) 100%);
 				padding: 25px;
 				border-radius: 8px;
@@ -2460,6 +2965,10 @@ function getProjectReportContent(project, webview) {
 	</head>
 	<body>
 		<div class="report-header">
+			<button class="export-pdf-btn" onclick="exportToPDF()" title="Export to PDF">
+				<span>📄</span>
+				<span>Export to PDF</span>
+			</button>
 			<h1>📊 Test Report</h1>
 			<div style="font-size: 1.1em; margin-top: 10px;">
 				<strong>Project:</strong> ${project.name}
@@ -2513,10 +3022,12 @@ function getProjectReportContent(project, webview) {
 		<h2>📋 Requirements & Test Cases</h2>
 		${requirementsHtml}
 	</div>
-	
+
 	<div class="image-overlay" id="imageOverlay" onclick="closeImageZoom()"></div>
-	
+
 	<script>
+		const vscode = acquireVsCodeApi();
+
 		function toggleImageZoom(img) {
 				const overlay = document.getElementById('imageOverlay');
 				if (img.classList.contains('enlarged')) {
@@ -2527,75 +3038,432 @@ function getProjectReportContent(project, webview) {
 					overlay.classList.add('active');
 				}
 			}
-			
+
 			function closeImageZoom() {
 				const images = document.querySelectorAll('.evidence-thumbnail.enlarged, .evidence-thumb.enlarged');
 				images.forEach(img => img.classList.remove('enlarged'));
 				document.getElementById('imageOverlay').classList.remove('active');
 			}
-			
+
 			// Draw pie chart
 			function drawPieChart(passed, failed, notExecuted) {
 				const total = passed + failed + notExecuted;
 				if (total === 0) return;
-				
+
 				const svg = document.getElementById('pieChart');
 				const centerX = 125;
 				const centerY = 125;
 				const radius = 80;
-				
+
 				const data = [
 					{ value: passed, color: '#28a745', label: 'Passed' },
 					{ value: failed, color: '#dc3545', label: 'Failed' },
 					{ value: notExecuted, color: '#6c757d', label: 'Not Executed' }
 				];
-				
+
 				let currentAngle = -90; // Start from top
-				
+
 				data.forEach(segment => {
 					if (segment.value === 0) return;
-					
+
 					const sliceAngle = (segment.value / total) * 360;
 					const startAngle = currentAngle;
 					const endAngle = currentAngle + sliceAngle;
-					
+
 					const startRad = (startAngle * Math.PI) / 180;
 					const endRad = (endAngle * Math.PI) / 180;
-					
+
 					const x1 = centerX + radius * Math.cos(startRad);
 					const y1 = centerY + radius * Math.sin(startRad);
 					const x2 = centerX + radius * Math.cos(endRad);
 					const y2 = centerY + radius * Math.sin(endRad);
-					
+
 					const largeArc = sliceAngle > 180 ? 1 : 0;
-					
+
 					const pathData = [
 						'M ' + centerX + ' ' + centerY,
 						'L ' + x1 + ' ' + y1,
 						'A ' + radius + ' ' + radius + ' 0 ' + largeArc + ' 1 ' + x2 + ' ' + y2,
 						'Z'
 					].join(' ');
-					
+
 					const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
 					path.setAttribute('d', pathData);
 					path.setAttribute('fill', segment.color);
 					path.setAttribute('stroke', 'var(--vscode-editor-background)');
 					path.setAttribute('stroke-width', '2');
-					
+
 					const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
 					title.textContent = segment.label + ': ' + segment.value + ' (' + ((segment.value/total)*100).toFixed(1) + '%)';
 					path.appendChild(title);
-					
+
 					svg.appendChild(path);
 					currentAngle = endAngle;
 				});
 			}
-			
+
 			// Draw chart on load
 			drawPieChart(${passedTests}, ${failedTests}, ${notExecutedTests});
+
+			// Export to PDF function
+			function exportToPDF() {
+				try {
+					console.log('Exporting project report to PDF...');
+					vscode.postMessage({
+						command: 'exportToPDF'
+					});
+				} catch (error) {
+					console.error('Error exporting to PDF:', error);
+					alert('Error exporting report. Please try again.');
+				}
+			}
 		</script>
 	</body>
 	</html>`;
+}
+
+// Generate standalone HTML for exporting requirement report
+function getRequirementReportHTMLForExport(requirement, project) {
+	const testCasesList = requirement.testCases || [];
+	const totalTests = testCasesList.length;
+	const executedTests = testCasesList.filter(tc => tc.executed).length;
+	const passedTests = testCasesList.filter(tc => tc.executed && tc.passed).length;
+	const failedTests = testCasesList.filter(tc => tc.executed && !tc.passed).length;
+	const notExecutedTests = totalTests - executedTests;
+
+	let testsHtml = '';
+	if (testCasesList.length > 0) {
+		testCasesList.forEach((testCase, index) => {
+			const statusBadge = testCase.executed
+				? (testCase.passed
+					? '<span class="badge badge-success">✓ Passed</span>'
+					: '<span class="badge badge-failed">✗ Failed</span>')
+				: '<span class="badge badge-pending">○ Not Executed</span>';
+
+			const executionInfo = testCase.executed ? `
+				<p><strong>Executed By:</strong> ${testCase.executedBy}</p>
+				<p><strong>Execution Date:</strong> ${testCase.executionDate}</p>
+				${testCase.observations ? `<p><strong>Observations:</strong> ${testCase.observations}</p>` : ''}
+			` : '';
+
+			const descriptionInfo = testCase.description ? `<p><strong>Description:</strong> ${testCase.description}</p>` : '';
+
+			// Build evidence HTML
+			let evidenceHtml = '';
+			if (testCase.evidences && testCase.evidences.length > 0) {
+				evidenceHtml = '<div class="evidences-section"><h4>📎 Evidences</h4>';
+				testCase.evidences.forEach((evidence, evidenceIndex) => {
+					let imageHtml = '';
+					if (evidence.filePath && fs.existsSync(evidence.filePath)) {
+						try {
+							const imageData = fs.readFileSync(evidence.filePath);
+							const base64Image = imageData.toString('base64');
+							const ext = path.extname(evidence.filePath).toLowerCase();
+							const mimeType = ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/png';
+							imageHtml = `
+								<div class="evidence-image-container">
+									<img src="data:${mimeType};base64,${base64Image}" alt="${evidence.fileName}" class="evidence-thumbnail">
+									<p class="image-caption">${evidence.fileName}</p>
+								</div>
+							`;
+						} catch (error) {
+							imageHtml = `<p class="error-text">Failed to load image</p>`;
+						}
+					}
+
+					const croppedBadge = evidence.cropped ? '<span class="cropped-badge">✂️ Cropped</span>' : '';
+
+					evidenceHtml += `
+						<div class="evidence-item-small">
+							<strong>${evidenceIndex + 1}. ${evidence.fileName}</strong> ${croppedBadge}
+							${evidence.description ? `<p class="evidence-desc">${evidence.description}</p>` : ''}
+							${imageHtml}
+						</div>
+					`;
+				});
+				evidenceHtml += '</div>';
+			}
+
+			testsHtml += `
+				<div class="test-case-item">
+					<h3>${index + 1}. ${testCase.name}</h3>
+					<div class="status-line">${statusBadge}</div>
+					${descriptionInfo}
+					<p><strong>Expected Result:</strong> ${testCase.expectedResult}</p>
+					${executionInfo}
+					${evidenceHtml}
+				</div>
+			`;
+		});
+	} else {
+		testsHtml = '<p class="empty-state">No test cases defined for this requirement.</p>';
+	}
+
+	return `<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Requirement Report - ${requirement.name}</title>
+	<style>
+		body { font-family: Arial, sans-serif; padding: 20px; color: #333; background-color: #fff; }
+		h1 { color: #000; border-bottom: 3px solid #ccc; padding-bottom: 15px; margin-bottom: 20px; }
+		h2 { color: #000; margin-top: 30px; margin-bottom: 15px; }
+		h3 { margin: 0; color: #0066cc; }
+		.report-header { background: linear-gradient(135deg, #f0f0f0 0%, #e0e0e0 100%); padding: 20px; border-radius: 8px; margin-bottom: 30px; }
+		.project-info { font-size: 0.95em; color: #666; margin-bottom: 10px; }
+		.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-bottom: 20px; }
+		.stat-card { background-color: #f8f8f8; padding: 15px; border-radius: 6px; text-align: center; border-left: 4px solid #0066cc; }
+		.stat-number { font-size: 2em; font-weight: bold; color: #0066cc; display: block; }
+		.stat-label { font-size: 0.9em; color: #666; margin-top: 5px; }
+		.test-case-item { background-color: #f8f8f8; padding: 20px; margin: 15px 0; border-radius: 6px; border-left: 4px solid #ccc; page-break-inside: avoid; }
+		.status-line { margin: 10px 0; }
+		.badge { display: inline-block; padding: 5px 15px; border-radius: 12px; font-weight: bold; font-size: 0.9em; }
+		.badge-success { background-color: #28a745; color: white; }
+		.badge-failed { background-color: #dc3545; color: white; }
+		.badge-pending { background-color: #6c757d; color: white; }
+		.empty-state { text-align: center; padding: 40px; color: #999; font-style: italic; }
+		.evidences-section { margin-top: 15px; padding-top: 15px; border-top: 1px solid #ccc; }
+		.evidences-section h4 { margin: 0 0 10px 0; color: #0066cc; font-size: 1em; }
+		.evidence-item-small { margin: 10px 0; padding: 10px; background-color: #fff; border-radius: 4px; }
+		.evidence-desc { font-size: 0.9em; color: #666; margin: 5px 0; }
+		.evidence-image-container { margin: 10px 0; text-align: center; }
+		.evidence-thumbnail { width: 70%; height: auto; border: 1px solid #ccc; border-radius: 4px; }
+		.image-caption { font-size: 0.85em; color: #666; margin: 5px 0; font-style: italic; }
+		.cropped-badge { display: inline-block; padding: 2px 6px; background-color: #ffc107; color: #000; border-radius: 3px; font-size: 0.8em; margin-left: 5px; }
+		.error-text { color: #dc3545; font-style: italic; font-size: 0.9em; }
+		@media print { body { padding: 10px; } .stat-card { page-break-inside: avoid; } }
+	</style>
+</head>
+<body>
+	<div class="report-header">
+		<h1>📋 Requirement Report</h1>
+		<div class="project-info"><strong>Project:</strong> ${project.name}</div>
+		<div class="project-info"><strong>Requirement:</strong> ${requirement.name}</div>
+		<div class="project-info"><strong>Generated:</strong> ${new Date().toLocaleString()}</div>
+	</div>
+
+	<h2>📊 Summary Statistics</h2>
+	<div class="stats-grid">
+		<div class="stat-card">
+			<span class="stat-number">${totalTests}</span>
+			<div class="stat-label">Total Tests</div>
+		</div>
+		<div class="stat-card" style="border-left-color: #28a745;">
+			<span class="stat-number" style="color: #28a745;">${passedTests}</span>
+			<div class="stat-label">Passed</div>
+		</div>
+		<div class="stat-card" style="border-left-color: #dc3545;">
+			<span class="stat-number" style="color: #dc3545;">${failedTests}</span>
+			<div class="stat-label">Failed</div>
+		</div>
+		<div class="stat-card" style="border-left-color: #6c757d;">
+			<span class="stat-number" style="color: #6c757d;">${notExecutedTests}</span>
+			<div class="stat-label">Not Executed</div>
+		</div>
+	</div>
+
+	<h2>🧪 Test Cases</h2>
+	${testsHtml}
+</body>
+</html>`;
+}
+
+// Generate standalone HTML for exporting project report
+function getProjectReportHTMLForExport(project) {
+	const requirements = project.requirements || [];
+	const totalRequirements = requirements.length;
+
+	let totalTests = 0;
+	let passedTests = 0;
+	let failedTests = 0;
+	let notExecutedTests = 0;
+
+	requirements.forEach(req => {
+		const testCases = req.testCases || [];
+		totalTests += testCases.length;
+		passedTests += testCases.filter(tc => tc.executed && tc.passed).length;
+		failedTests += testCases.filter(tc => tc.executed && !tc.passed).length;
+		notExecutedTests += testCases.filter(tc => !tc.executed).length;
+	});
+
+	let requirementsHtml = '';
+	if (requirements.length > 0) {
+		requirements.forEach((requirement, reqIndex) => {
+			const testCases = requirement.testCases || [];
+			const reqTotalTests = testCases.length;
+			const reqPassedTests = testCases.filter(tc => tc.executed && tc.passed).length;
+			const reqFailedTests = testCases.filter(tc => tc.executed && !tc.passed).length;
+			const reqNotExecuted = testCases.filter(tc => !tc.executed).length;
+
+			let reqStatusBadge = '<span class="badge badge-pending">○ Not Executed</span>';
+			if (reqTotalTests > 0) {
+				if (reqPassedTests === reqTotalTests) {
+					reqStatusBadge = '<span class="badge badge-success">✓ All Passed</span>';
+				} else if (reqFailedTests > 0) {
+					reqStatusBadge = '<span class="badge badge-failed">✗ Has Failures</span>';
+				} else if (reqPassedTests > 0) {
+					reqStatusBadge = '<span class="badge badge-partial">◐ Partial</span>';
+				}
+			}
+
+			let testsHtml = '';
+			if (testCases.length > 0) {
+				testCases.forEach((testCase, testIndex) => {
+					const statusBadge = testCase.executed
+						? (testCase.passed
+							? '<span class="badge badge-success">✓ Passed</span>'
+							: '<span class="badge badge-failed">✗ Failed</span>')
+						: '<span class="badge badge-pending">○ Not Executed</span>';
+
+					const descriptionInfo = testCase.description ? `<p><strong>Description:</strong> ${testCase.description}</p>` : '';
+
+					let evidenceHtml = '';
+					if (testCase.evidences && testCase.evidences.length > 0) {
+						evidenceHtml = '<div class="evidences-section-mini">';
+						testCase.evidences.forEach((evidence, evidenceIndex) => {
+							let imageHtml = '';
+							if (evidence.filePath && fs.existsSync(evidence.filePath)) {
+								try {
+									const imageData = fs.readFileSync(evidence.filePath);
+									const base64Image = imageData.toString('base64');
+									const ext = path.extname(evidence.filePath).toLowerCase();
+									const mimeType = ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/png';
+									imageHtml = `
+										<div class="evidence-thumb-container">
+											<img src="data:${mimeType};base64,${base64Image}" alt="${evidence.fileName}" class="evidence-thumb">
+											<span class="evidence-thumb-caption">${evidenceIndex + 1}. ${evidence.fileName}</span>
+										</div>
+									`;
+								} catch (error) {
+									imageHtml = `<span class="error-mini">Error loading image</span>`;
+								}
+							}
+
+							evidenceHtml += imageHtml;
+						});
+						evidenceHtml += '</div>';
+					}
+
+					testsHtml += `
+						<div class="test-item">
+							<div class="test-header">
+								<span class="test-name">${testIndex + 1}. ${testCase.name}</span>
+								${statusBadge}
+							</div>
+							<div class="test-details">
+								${descriptionInfo}
+								<p><strong>Expected Result:</strong> ${testCase.expectedResult}</p>
+								${testCase.executed ? `<p><strong>Executed By:</strong> ${testCase.executedBy} on ${testCase.executionDate}</p>` : ''}
+								${testCase.observations ? `<p><strong>Observations:</strong> ${testCase.observations}</p>` : ''}
+								${evidenceHtml}
+							</div>
+						</div>
+					`;
+				});
+			} else {
+				testsHtml = '<p class="no-tests">No test cases defined.</p>';
+			}
+
+			requirementsHtml += `
+				<div class="requirement-section">
+					<div class="requirement-header">
+						<h3>${reqIndex + 1}. ${requirement.name}</h3>
+						${reqStatusBadge}
+					</div>
+					<div class="requirement-stats">
+						<span class="stat-item">Total: ${reqTotalTests}</span>
+						<span class="stat-item stat-success">Passed: ${reqPassedTests}</span>
+						<span class="stat-item stat-failed">Failed: ${reqFailedTests}</span>
+						<span class="stat-item stat-pending">Not Executed: ${reqNotExecuted}</span>
+					</div>
+					<div class="tests-list">
+						${testsHtml}
+					</div>
+				</div>
+			`;
+		});
+	} else {
+		requirementsHtml = '<p class="empty-state">No requirements defined for this project.</p>';
+	}
+
+	return `<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Test Report - ${project.name}</title>
+	<style>
+		body { font-family: Arial, sans-serif; padding: 20px; color: #333; background-color: #fff; }
+		h1 { color: #000; border-bottom: 3px solid #ccc; padding-bottom: 15px; margin-bottom: 20px; }
+		h2 { color: #000; margin-top: 30px; margin-bottom: 20px; }
+		h3 { margin: 0; color: #0066cc; }
+		.report-header { background: linear-gradient(135deg, #f0f0f0 0%, #e0e0e0 100%); padding: 25px; border-radius: 8px; margin-bottom: 30px; }
+		.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-bottom: 20px; }
+		.stat-card { background-color: #f8f8f8; padding: 20px; border-radius: 6px; text-align: center; border-left: 4px solid #0066cc; }
+		.stat-number { font-size: 2.5em; font-weight: bold; color: #0066cc; display: block; }
+		.stat-label { font-size: 0.9em; color: #666; margin-top: 8px; }
+		.requirement-section { background-color: #f8f8f8; padding: 20px; margin-bottom: 20px; border-radius: 8px; border-left: 4px solid #0066cc; page-break-inside: avoid; }
+		.requirement-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #ccc; flex-wrap: wrap; }
+		.requirement-stats { display: flex; gap: 20px; margin-bottom: 15px; font-size: 0.9em; flex-wrap: wrap; }
+		.stat-item { padding: 5px 10px; background-color: #fff; border-radius: 4px; }
+		.stat-success { color: #28a745; }
+		.stat-failed { color: #dc3545; }
+		.stat-pending { color: #6c757d; }
+		.test-item { background-color: #fff; padding: 15px; margin: 10px 0; border-radius: 4px; border-left: 3px solid #ccc; page-break-inside: avoid; }
+		.test-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 10px; }
+		.test-name { font-weight: 600; color: #000; }
+		.test-details { font-size: 0.9em; }
+		.test-details p { margin: 5px 0; }
+		.badge { display: inline-block; padding: 4px 12px; border-radius: 10px; font-weight: bold; font-size: 0.85em; }
+		.badge-success { background-color: #28a745; color: white; }
+		.badge-failed { background-color: #dc3545; color: white; }
+		.badge-pending { background-color: #6c757d; color: white; }
+		.badge-partial { background-color: #ffc107; color: #000; }
+		.empty-state, .no-tests { text-align: center; padding: 30px; color: #999; font-style: italic; }
+		.evidences-section-mini { margin-top: 10px; padding-top: 10px; border-top: 1px dashed #ccc; display: flex; gap: 10px; flex-wrap: wrap; }
+		.evidence-thumb-container { position: relative; display: inline-block; }
+		.evidence-thumb { width: 70%; height: auto; border: 1px solid #ccc; border-radius: 4px; }
+		.evidence-thumb-caption { display: block; font-size: 0.75em; color: #666; margin-top: 3px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+		.error-mini { font-size: 0.8em; color: #dc3545; }
+		@media print { body { padding: 10px; } .requirement-section, .test-item { page-break-inside: avoid; } }
+	</style>
+</head>
+<body>
+	<div class="report-header">
+		<h1>📊 Test Report</h1>
+		<div style="font-size: 1.1em; margin-top: 10px;"><strong>Project:</strong> ${project.name}</div>
+		<div style="font-size: 0.9em; margin-top: 5px; color: #666;"><strong>Generated:</strong> ${new Date().toLocaleString()}</div>
+	</div>
+
+	<h2>📈 Overall Statistics</h2>
+	<div class="stats-grid">
+		<div class="stat-card">
+			<span class="stat-number">${totalRequirements}</span>
+			<div class="stat-label">Requirements</div>
+		</div>
+		<div class="stat-card">
+			<span class="stat-number">${totalTests}</span>
+			<div class="stat-label">Total Tests</div>
+		</div>
+		<div class="stat-card" style="border-left-color: #28a745;">
+			<span class="stat-number" style="color: #28a745;">${passedTests}</span>
+			<div class="stat-label">Passed</div>
+		</div>
+		<div class="stat-card" style="border-left-color: #dc3545;">
+			<span class="stat-number" style="color: #dc3545;">${failedTests}</span>
+			<div class="stat-label">Failed</div>
+		</div>
+		<div class="stat-card" style="border-left-color: #6c757d;">
+			<span class="stat-number" style="color: #6c757d;">${notExecutedTests}</span>
+			<div class="stat-label">Not Executed</div>
+		</div>
+	</div>
+
+	<h2>📋 Requirements & Test Cases</h2>
+	${requirementsHtml}
+</body>
+</html>`;
 }
 
 function deactivate() {}
