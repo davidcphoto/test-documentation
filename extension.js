@@ -2505,6 +2505,25 @@ function getRequirementReportContent(requirement, project, webview) {
 				if (segment.value === 0) return;
 
 				const sliceAngle = (segment.value / total) * 360;
+
+				// If this segment is 100%, draw a full circle
+				if (sliceAngle >= 359.9) {
+					const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+					circle.setAttribute('cx', centerX);
+					circle.setAttribute('cy', centerY);
+					circle.setAttribute('r', radius);
+					circle.setAttribute('fill', segment.color);
+					circle.setAttribute('stroke', 'var(--vscode-editor-background)');
+					circle.setAttribute('stroke-width', '2');
+
+					const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+					title.textContent = segment.label + ': ' + segment.value + ' (100%)';
+					circle.appendChild(title);
+
+					svg.appendChild(circle);
+					return;
+				}
+
 				const startAngle = currentAngle;
 				const endAngle = currentAngle + sliceAngle;
 
@@ -2519,26 +2538,26 @@ function getRequirementReportContent(requirement, project, webview) {
 				const largeArc = sliceAngle > 180 ? 1 : 0;
 
 				const pathData = [
-				'M ' + centerX + ' ' + centerY,
-				'L ' + x1 + ' ' + y1,
-				'A ' + radius + ' ' + radius + ' 0 ' + largeArc + ' 1 ' + x2 + ' ' + y2,
-				'Z'
-			].join(' ');
+					'M ' + centerX + ' ' + centerY,
+					'L ' + x1 + ' ' + y1,
+					'A ' + radius + ' ' + radius + ' 0 ' + largeArc + ' 1 ' + x2 + ' ' + y2,
+					'Z'
+				].join(' ');
 
-			const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-			path.setAttribute('d', pathData);
-			path.setAttribute('fill', segment.color);
-			path.setAttribute('stroke', 'var(--vscode-editor-background)');
-			path.setAttribute('stroke-width', '2');
+				const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+				path.setAttribute('d', pathData);
+				path.setAttribute('fill', segment.color);
+				path.setAttribute('stroke', 'var(--vscode-editor-background)');
+				path.setAttribute('stroke-width', '2');
 
-			const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-			title.textContent = segment.label + ': ' + segment.value + ' (' + ((segment.value/total)*100).toFixed(1) + '%)';
-			path.appendChild(title);
+				const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+				title.textContent = segment.label + ': ' + segment.value + ' (' + ((segment.value/total)*100).toFixed(1) + '%)';
+				path.appendChild(title);
 
-			svg.appendChild(path);
-			currentAngle = endAngle;
-		});
-	}
+				svg.appendChild(path);
+				currentAngle = endAngle;
+			});
+		}
 
 		// Draw chart on load
 		drawPieChart(${passedTests}, ${failedTests}, ${notExecutedTests});
@@ -2591,8 +2610,11 @@ function getProjectReportContent(project, webview) {
 			notExecutedRequirements++;
 		} else if (reqFailedTests > 0) {
 			failedRequirements++;
-		} else if (reqPassedTests === reqTotalTests) {
+		} else if (reqPassedTests === reqTotalTests && reqExecutedTests === reqTotalTests) {
 			passedRequirements++;
+		} else {
+			// Has some passed tests but not all tests executed yet
+			notExecutedRequirements++;
 		}
 	});
 
@@ -3124,6 +3146,25 @@ function getProjectReportContent(project, webview) {
 					if (segment.value === 0) return;
 
 					const sliceAngle = (segment.value / total) * 360;
+
+				// If this segment is 100%, draw a full circle
+				if (sliceAngle >= 359.9) {
+					const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+					circle.setAttribute('cx', centerX);
+					circle.setAttribute('cy', centerY);
+					circle.setAttribute('r', radius);
+					circle.setAttribute('fill', segment.color);
+					circle.setAttribute('stroke', 'var(--vscode-editor-background)');
+					circle.setAttribute('stroke-width', '2');
+
+					const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+					title.textContent = segment.label + ': ' + segment.value + ' (100%)';
+					circle.appendChild(title);
+
+					svg.appendChild(circle);
+					return;
+				}
+
 					const startAngle = currentAngle;
 					const endAngle = currentAngle + sliceAngle;
 
@@ -3290,6 +3331,13 @@ function getRequirementReportHTMLForExport(requirement, project) {
 		.image-caption { font-size: 0.85em; color: #666; margin: 5px 0; font-style: italic; }
 		.cropped-badge { display: inline-block; padding: 2px 6px; background-color: #ffc107; color: #000; border-radius: 3px; font-size: 0.8em; margin-left: 5px; }
 		.error-text { color: #dc3545; font-style: italic; font-size: 0.9em; }
+
+		/* Chart styles */
+		.chart-container { display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 30px; margin-top: 20px; background-color: #f8f8f8; padding: 20px; border-radius: 8px; }
+		.chart-legend { display: flex; flex-direction: column; gap: 8px; }
+		.legend-item { display: flex; align-items: center; gap: 8px; font-size: 0.9em; }
+		.legend-color { width: 16px; height: 16px; border-radius: 3px; }
+
 		@media print { body { padding: 10px; } .stat-card { page-break-inside: avoid; } }
 	</style>
 </head>
@@ -3321,8 +3369,106 @@ function getRequirementReportHTMLForExport(requirement, project) {
 		</div>
 	</div>
 
+	<div class="chart-container">
+		<svg id="pieChart" width="250" height="250" viewBox="0 0 250 250"></svg>
+		<div class="chart-legend">
+			<div class="legend-item">
+				<span class="legend-color" style="background-color: #28a745;"></span>
+				<span>Passed (${passedTests})</span>
+			</div>
+			<div class="legend-item">
+				<span class="legend-color" style="background-color: #dc3545;"></span>
+				<span>Failed (${failedTests})</span>
+			</div>
+			<div class="legend-item">
+				<span class="legend-color" style="background-color: #6c757d;"></span>
+				<span>Not Executed (${notExecutedTests})</span>
+			</div>
+		</div>
+	</div>
+
 	<h2>🧪 Test Cases</h2>
 	${testsHtml}
+	<script>
+		// Draw pie chart
+		function drawPieChart(passed, failed, notExecuted) {
+			const total = passed + failed + notExecuted;
+			if (total === 0) return;
+
+			const svg = document.getElementById('pieChart');
+			const centerX = 125;
+			const centerY = 125;
+			const radius = 80;
+
+			const data = [
+				{ value: passed, color: '#28a745', label: 'Passed' },
+				{ value: failed, color: '#dc3545', label: 'Failed' },
+				{ value: notExecuted, color: '#6c757d', label: 'Not Executed' }
+			];
+
+			let currentAngle = -90;
+
+			data.forEach(segment => {
+				if (segment.value === 0) return;
+
+				const sliceAngle = (segment.value / total) * 360;
+
+				// If this segment is 100%, draw a full circle
+				if (sliceAngle >= 359.9) {
+					const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+					circle.setAttribute('cx', centerX);
+					circle.setAttribute('cy', centerY);
+					circle.setAttribute('r', radius);
+					circle.setAttribute('fill', segment.color);
+					circle.setAttribute('stroke', '#fff');
+					circle.setAttribute('stroke-width', '2');
+
+					const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+					title.textContent = segment.label + ': ' + segment.value + ' (100%)';
+					circle.appendChild(title);
+
+					svg.appendChild(circle);
+					return;
+				}
+
+				const startAngle = currentAngle;
+				const endAngle = currentAngle + sliceAngle;
+
+				const startRad = (startAngle * Math.PI) / 180;
+				const endRad = (endAngle * Math.PI) / 180;
+
+				const x1 = centerX + radius * Math.cos(startRad);
+				const y1 = centerY + radius * Math.sin(startRad);
+				const x2 = centerX + radius * Math.cos(endRad);
+				const y2 = centerY + radius * Math.sin(endRad);
+
+				const largeArc = sliceAngle > 180 ? 1 : 0;
+
+				const pathData = [
+					'M ' + centerX + ' ' + centerY,
+					'L ' + x1 + ' ' + y1,
+					'A ' + radius + ' ' + radius + ' 0 ' + largeArc + ' 1 ' + x2 + ' ' + y2,
+					'Z'
+				].join(' ');
+
+				const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+				path.setAttribute('d', pathData);
+				path.setAttribute('fill', segment.color);
+				path.setAttribute('stroke', '#fff');
+				path.setAttribute('stroke-width', '2');
+
+				const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+				title.textContent = segment.label + ': ' + segment.value + ' (' + ((segment.value/total)*100).toFixed(1) + '%)';
+				path.appendChild(title);
+
+				svg.appendChild(path);
+				currentAngle = endAngle;
+			});
+		}
+
+		// Draw chart on load
+		drawPieChart(${passedTests}, ${failedTests}, ${notExecutedTests});
+	</script>
 </body>
 </html>`;
 }
@@ -3359,8 +3505,11 @@ function getProjectReportHTMLForExport(project) {
 			notExecutedRequirements++;
 		} else if (reqFailedTests > 0) {
 			failedRequirements++;
-		} else if (reqPassedTests === reqTotalTests) {
+		} else if (reqPassedTests === reqTotalTests && reqExecutedTests === reqTotalTests) {
 			passedRequirements++;
+		} else {
+			// Has some passed tests but not all tests executed yet
+			notExecutedRequirements++;
 		}
 	});
 
@@ -3503,7 +3652,7 @@ function getProjectReportHTMLForExport(project) {
 		.evidence-thumb { width: 70%; height: auto; border: 1px solid #ccc; border-radius: 4px; }
 		.evidence-thumb-caption { display: block; font-size: 0.75em; color: #666; margin-top: 3px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 		.error-mini { font-size: 0.8em; color: #dc3545; }
-		
+
 		/* Charts styles */
 		.charts-wrapper { display: flex; flex-direction: row; align-items: flex-start; justify-content: center; gap: 40px; margin: 20px 0; background-color: #f8f8f8; padding: 20px; border-radius: 8px; flex-wrap: wrap; }
 		.chart-container { display: flex; flex-direction: column; align-items: center; gap: 20px; min-width: 300px; }
@@ -3511,7 +3660,7 @@ function getProjectReportHTMLForExport(project) {
 		.chart-legend { display: flex; flex-direction: column; gap: 8px; }
 		.chart-legend-item { display: flex; align-items: center; gap: 8px; font-size: 0.9em; }
 		.chart-legend-color { width: 20px; height: 20px; border-radius: 4px; }
-		
+
 		@media print { body { padding: 10px; } .requirement-section, .test-item { page-break-inside: avoid; } }
 	</style>
 </head>
@@ -3611,6 +3760,25 @@ function getProjectReportHTMLForExport(project) {
 				if (segment.value === 0) return;
 
 				const sliceAngle = (segment.value / total) * 360;
+
+				// If this segment represents 100% of the data, draw a full circle
+				if (sliceAngle >= 359.9) {
+					const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+					circle.setAttribute('cx', centerX);
+					circle.setAttribute('cy', centerY);
+					circle.setAttribute('r', radius);
+					circle.setAttribute('fill', segment.color);
+					circle.setAttribute('stroke', '#fff');
+					circle.setAttribute('stroke-width', '2');
+
+					const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+					title.textContent = segment.label + ': ' + segment.value + ' (100.0%)';
+					circle.appendChild(title);
+
+					svg.appendChild(circle);
+					return;
+				}
+
 				const startAngle = currentAngle;
 				const endAngle = currentAngle + sliceAngle;
 
